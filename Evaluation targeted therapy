@@ -5,11 +5,11 @@ set.seed(12345) # Simulation for empirical p-values
 setwd("/gpfs/gsfs12/users/kimy35/SELECT/select_targeted/cox_sort_12_05/R_target_data")
 source("./Ranking_Pairs4.R") ## import functions
 
-###
-nn = 50 ; # the number of partner genes
+##
+nn = 50 ; # The number of partner genes
 tcga_list <- readRDS(file = "./TCGA_genes.rds"); 
-tcga_list <- tcga_list[1:19001] # remove PD1/PDL1
-bc_gene_list <- read.delim("./bc_gene_list.txt", stringsAsFactors=TRUE)
+tcga_list <- tcga_list[1:19001] # Remove PD1/PDL1
+bc_gene_list <- read.delim("./bc_gene_list.txt", stringsAsFactors=TRUE) 
 bc_gene_list <- as.character(bc_gene_list$Gene.Symbol)
 
 ###
@@ -116,7 +116,7 @@ SDL_AUC(data1 = GSE66399_L3, data2 = GSE66399_L4, drugs = "LAPATINIB",  drug_res
 # Focusing on ERBB2, BC-SELECT AUC : 0.663
 rm(GSE66399_L, GSE66399_L3, GSE66399_L4, pairs)
 
-############################################################# PARP inhibitors
+### PARP inhibitors
 
 ###
 ### VELIPARIB, PARP1, PARP2
@@ -187,6 +187,7 @@ SDL_AUC(data1 = GSE173839_2, data2 = GSE173839_3, drugs = "OLAPARIB",
 rm(ISPY2_OLAPARIB, GSE173839_2, GSE173839_3, pairs)
 
 # Figure: histogram of Monte Carlo experiments
+# Save null AUC values for each cases
 control_t <- data.frame(control, rep("Control1", 5000)); colnames(control_t) <- c("AUC", "type")
 bc1 <- data.frame(bc_metaAUC2, rep("Control2", 5000)); colnames(bc1) <- c("AUC", "type")
 bc2 <- data.frame(bc_metaAUC4, rep("BC-SELECT", 5000)); colnames(bc2) <- c("AUC", "type")
