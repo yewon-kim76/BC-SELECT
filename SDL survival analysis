@@ -21,31 +21,31 @@ qnorm_normalization <- function(x) {
 
 # Functions -------------------------------------------------------------------
 cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # Define genes
-                         prob = data, # RNA-seq data
-                         clinical = clinical, # phenotype data
+                         prob = data, # Define RNA-seq data
+                         clinical = clinical, # Define phenotype data
                          interaction = "SDL", 
                          survival = "survival"){
   rows <- list()
   
   if (sdl_pair["GENE_A"] %in% prob$genes & sdl_pair["GENE_B"] %in% prob$genes) {
-  # Only include cases where SL pairs are in dataset.
-  # Build dataframe for cox regression (all variables and covariates).
+  # Only include cases where SDL pairs are in dataset
+  # Build dataframe for cox regression (all variables and covariates)
   cox_df <- clinical %>%
     add_column(
       g1 = prob$mrna_qnorm[sdl_pair["GENE_A"], ], g2 = prob$mrna_qnorm[sdl_pair["GENE_B"], ],
       g1_q2 = prob$mrna_q2[sdl_pair["GENE_A"], ], g2_q2 = prob$mrna_q2[sdl_pair["GENE_B"], ] )
-    cox_df <- cox_df[complete.cases(cox_df), ] # Only include samples where all covariates and cov +g1 +g2 are non-na.
+    cox_df <- cox_df[complete.cases(cox_df), ] # Only include samples where all covariates and cov +g1 +g2 are non NA.
     
   if (nrow(cox_df) > 10) { # Must have at least 10 patients with all variables going into model
-  # Define interaction
+ 
   cox_df <- cox_df %>% mutate(cov = as.numeric(g1_q2 == 0 & g2_q2 == 2))  # cov=1 if gene_a low and gene_b high
   
   # Model 1: Model without controlling for confounding factors
   uncntrl <- coxph(Surv(time, status) ~ cov, data = cox_df); model1 <- summary(uncntrl)
       
-  # add possible covariates
+  # Add possible covariates
   var <- cox_df %>% select(any_of(c("types","age","sex","race","stage")))
-  f1.list = names(var) ## select any possible variables, and change to strata
+  f1.list = names(var) # Select any possible variables, and change to strata
   f1.list <- ifelse(f1.list %in% c("types","sex","race","stage"), paste("strata(",f1.list,")", sep="" ), f1.list) 
       
   # Model 2: Reduced model, without the interaction term (cov)
@@ -58,23 +58,19 @@ cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # D
   cntrl_full <- coxph(as.formula(formulaString), data = cox_df)
   model3 <- summary(cntrl_full)
       
-  # In the following tests df, Save coefs and pvals
-  # Negating coefficients indicate that the effect is tho opposite of the interaction tested
-  # (for SL these are genes that will actually worsen survival)
+  # In the following tests df, Save coefficients and p-values
   # lrt = Log likelihood ratio test. To test the significance of the interaction, 
-  # we need to compute the difference between the log likelihood statistic of the reduced model
-  # which does not contain the interaction term (model 2 without cov) and the log likelihood
-      
-  # statistic of the full model containing the interaction term (model 3 with cov)
-  cov_lrt <- (2) * (model3$loglik[2] - model2$loglik[2])
+  # we need to compute the difference between the log likelihood statistic of the reduced model (model 2) and the full model (model 3).
+  
+  cov_lrt <- (2) * (model3$loglik[2] - model2$loglik[2]) 
     res <- list(
       test = "cov",
       GENE_A = drug_target,
       GENE_B = sdl_pair["GENE_B"],
-      coef_unadj = model1$coefficients[1], ## cov coefficient, without covariates model
-      pval_unadj = model1$coefficients[1, 5], ## cov p-value, without covariates model
-      coef_adj = model3$coefficients[1], ## cov coefficient, with covariates model
-      pval_adj = model3$coefficients[1, 5], ## cov p-value, with covariates model
+      coef_unadj = model1$coefficients[1], # cov coefficient, without covariates model
+      pval_unadj = model1$coefficients[1, 5], # cov p-value, without covariates model
+      coef_adj = model3$coefficients[1], # cov coefficient, with covariates model
+      pval_adj = model3$coefficients[1, 5], # cov p-value, with covariates model
       lrt = cov_lrt,
       pval_lrt = 1 - pchisq(cov_lrt, df = 1),
       pts_w = sum(cox_df$cov == 1),
@@ -87,83 +83,21 @@ cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # D
 
 # fit--------------------------------------------------------------------
 # patient level data: TCGA and METABRIC
-load("/data/kimy35/prob.curtis.extended.RData")
-metabric <- prob ## METABRIC data
-rm(prob)
+load("/data/kimy35/prob.curtis.extended.RData") # METABRIC
+load("/gpfs/gsfs12/users/kimy35/SELECT/select_immuno/data/prob.TCGA.ICI.RData") # TCGA 
 
-load("/gpfs/gsfs12/users/kimy35/SELECT/select_immuno/data/prob.TCGA.ICI.RData") ## TCGA Immune Checkpoint Inhibitor (ICI)
-TCGA.ICI <- prob
-rm(prob)
-
-load("/gpfs/gsfs12/users/kimy35/SELECT/select_immuno/PAN_TCGA_META_immuno.RData") ##prob
-RNA_data <- list (genes = prob$genes,
-                  samples = prob$samples,
-                  mrna = prob$mRNA,
-                  mrna_q2 = prob$mRNAq2,
-                  mrna_qnorm =  prob$mRNA.norm) ## only contain gene expression information
-rm(prob)
-
-source("/gpfs/gsfs12/users/kimy35/SELECT/select_immuno/R/source.R")
-## cox regression information for TCGA.ICI: types, sex, age, race, stage
-TCGA.ICI$age = ifelse(is.na(TCGA.ICI$age), mean(TCGA.ICI$age,na.rm=T), TCGA.ICI$age) 
-TCGA.ICI$race = ifelse(is.na(TCGA.ICI$race),"unknown", TCGA.ICI$race) 
-TCGA.ICI$stage <- recode(TCGA.ICI$stage, "I/II NOS" = "NA", "IS" = "NA", "Stage 0" = "NA",
-                         "Stage IA" = "Stage I", "Stage IB" = "Stage I",
-                         "Stage IIA" = "Stage II", "Stage IIB" = "Stage II", "Stage IIC" = "Stage II",
-                         "Stage IIIA" = "Stage III", "Stage IIIB" = "Stage III", "Stage IIIC" = "Stage III",
-                         "Stage IVA" = "Stage IV", "Stage IVB" = "Stage IV", 
-                         "Stage IVC" = "Stage IV", "Stage X" = "NA")
-TCGA.ICI$stage = ifelse(is.na(TCGA.ICI$stage), "unknown", TCGA.ICI$stage) ## missing value
-
-TCGA.list = list(genes = RNA_data$genes[1:19001], ## remove PD1/PDL1
-                 mrna_qnorm = RNA_data$mrna_qnorm[1:19001, 1:8749], ## remove PD1/PDL1
-                 mrna_q2 = RNA_data$mrna_q2[1:19001, 1:8749]) ## remove PD1/PDL1
-
-TCGA.surv <- data.frame(types = TCGA.ICI$types, age = qnorm.array(TCGA.ICI$age), sex = TCGA.ICI$sex, 
-                        race = TCGA.ICI$race, stage = TCGA.ICI$stage, time = TCGA.ICI$surv.dt$time,
-                        status = TCGA.ICI$surv.dt$status)
-
-TCGA.surv$status = ifelse(TCGA.surv$status==1,0,1) ## opposite survival status
-rm(TCGA.ICI)
-
-## cox regression information for METABRIC: age, stage
-metabric$age = ifelse(is.na(metabric$age), mean(metabric$age,na.rm=T), metabric$age) 
-metabric$stage = recode(metabric$stage, "0" = "NA ", "1" = "Stage I", "2" = "Stage II",
-                        "3" = "Stage III", "4" = "Stage IV", "null" = "NA" )
-
-metabric.list = list(genes = RNA_data$genes[1:19001], ## remove PD1/PDL1
-                     mrna_qnorm = RNA_data$mrna_qnorm[1:19001, 8750:10738], ## remove PD1/PDL1
-                     mrna_q2 = RNA_data$mrna_q2[1:19001, 8750:10738]) ## remove PD1/PDL1
-
-metabric.surv = data.frame(time = metabric$surv.dt$time, status = metabric$surv.dt$status,
-                           age = qnorm.array(metabric$age), stage = metabric$stage )
-rm(metabric)
-
-BC.TCGA.list = list(genes = RNA_data$genes[1:19001], ## remove PD1/PDL1
-                    mrna_qnorm = RNA_data$mrna_qnorm[1:19001, 404:1478], ## remove PD1/PDL1
-                    mrna_q2 = RNA_data$mrna_q2[1:19001, 404:1478]) ## remove PD1/PDL1
-
-BC.TCGA.surv <- subset(TCGA.surv, TCGA.surv$types == "BRCA")
-BC.TCGA.surv <- BC.TCGA.surv[,-c(1)] ## remove types
-
-#
-drug_target = "ERBB2"
+drug_target = "ERBB2" 
 cox_bc_results <- NULL;
 for(i in 1:19001){
-  gene = BC.TCGA.list$genes[i]
+  gene = BC.TCGA.list$genes[i] # ALL candidates of SDL partner genes
   test_TCGA <- cox_sdl_pair(sdl_pair = c(GENE_A = drug_target, GENE_B = gene),
-                            prob = metabric.list, ##
-                            clinical = metabric.surv, ##
+                            prob = metabric.list, # RNA-seq data
+                            clinical = metabric.surv, # phynotype data
                             interaction = "SDL",
                             survival = "survival")
   cox_bc_results <- rbind(cox_bc_results, test_TCGA)
   print(i)}
 
-setwd("/gpfs/gsfs12/users/kimy35/SELECT/select_targeted/Target_training_BC-SELECT")
-#saveRDS(cox_bc_results, file = "ERBB2_SDL_cox_bc.rds")
-saveRDS(cox_bc_results, file = "ERBB2_SDL_cox_meta_covariates.rds")
+saveRDS(cox_bc_results, file = "ERBB2_SDL_cox_meta_covariates.rds") # Save the results
 
 rm(cox_bc_results, test_TCGA, gene, i)
-
-#rm(prob, clinical , cntrl_full, cntrl_reduced, cox_df, model1, model2, model3, res, uncntrl, var, 
-#   cov_lrt, f1.list, formulaString, lrt, pval_lrt, gene, i, test_TCGA)
