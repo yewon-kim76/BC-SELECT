@@ -1,8 +1,5 @@
-### Breast Cancer TCGA + METABRIC + updated cox regression filters
-### Molecular Taxonomy of Breast Cancer International Consortium (METABRIC)
-### TCGA Immune Checkpoint Inhibitor (TCGA.ICI)
-### BC TCGA + METABRIC training
-### Remove SCNA/CTLA4p, update PD1/PDL1
+# Breast Cancer TCGA + METABRIC + updated cox regression filters
+# Remove copynumber data, CTLA4p, update PD1/PDL1
 
 # Training---------------------------------------------------------------------------------------------------
 rm(list=ls())
