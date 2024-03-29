@@ -1,5 +1,10 @@
+# synthetic dosage lethality (SDL)
+# In order to expand drug coverage in targeted therapy, we are exploring additional SDL interactions.
+# SDL is a genetic phenomenon observed when there is an imbalance in the dosage of two genes within a cancer cell. 
+# It occurs when the overexpression of one gene becomes lethal to cell viability only in the context of the under-expression of another gene. 
+
+
 rm(list=ls())
-setwd("/gpfs/gsfs12/users/kimy35/SELECT/select_targeted")
 
 # Cox regression (SDL)
 # Load libraries ---------------------------------------------------------------
@@ -15,14 +20,7 @@ qnorm_normalization <- function(x) {
   return(x_back)}
 
 # Functions -------------------------------------------------------------------
-#' @param sdl_pair GENE_A and GENE_B
-#' @param prob list object
-#' @param data_slots c('mrna') ## c('mrna', 'scna')
-#' @param interaction "SL"--> synthetic lethality (SL), "SDL" --> synthetic dosage lethality (SDL)
-#' @param survival default 'survival' or 'progressionfree'
-#' @return A numeric matrix with 10 columns
-
-cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # define genes
+cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # Define genes
                          prob = data, # RNA-seq data
                          clinical = clinical, # phenotype data
                          interaction = "SDL", 
