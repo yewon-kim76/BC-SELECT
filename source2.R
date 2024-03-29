@@ -1,0 +1,194 @@
+getOR <- function(score,idx.R,idx.NR, thr = 0.44) {
+  # function to calculate odds ratio and confidence intervals
+  # score is calculated SL scores for all patients
+  # idx.R is index of responders in the array of samples
+  # idx.NR is index of non responders in the array of samples
+  
+  rsp <- score[idx.R] # True responders
+  non.rsp <- score[idx.NR]  # True non responders
+  
+  rsp.R <- rsp[rsp > thr] # Predicted responders - true positive
+  rsp.NR <- rsp[rsp <= thr] # Predicted non-responders - false negative
+  non.rsp.R <- non.rsp[non.rsp > thr] # Predicted responders - false positive
+  non.rsp.NR <- non.rsp[non.rsp <= thr] # Predicted non-responders - true negative
+  
+  # Odds ratio
+  odds.ratio <- (length(rsp.R)/length(rsp.NR))/(length(non.rsp.R)/length(non.rsp.NR))
+  # Standard error of odds ratio
+  std.err.or <- sqrt((1/length(rsp.R))+(1/length(rsp.NR))+(1/length(non.rsp.R))+(1/length(non.rsp.NR)))
+  
+  # Confidence interval - lower bound and upper bound
+  lower.bound <- exp(log(odds.ratio) - 1.96 * std.err.or)
+  upper.bound <- exp(log(odds.ratio) + 1.96 * std.err.or)
+  
+  return(c(odds.ratio,lower.bound,upper.bound)) }
+
+
+colSums2<-function(X){
+  if (class(X)=="numeric") y=X
+  if (class(X)=="matrix") y=colSums(X,na.rm=T)
+  return(y)}
+
+
+qnorm.array <- function(mat)     ############# correct one
+{mat.back = mat 
+	mat = mat[!is.na(mat)]
+    mat = rank(mat, ties.method = "average");
+    mat = qnorm(mat / (length(mat)+1));
+    mat.back[!is.na(mat.back)] = mat 
+    mat.back}
+
+
+rank.array <- function(mat)     ############# correct one
+{mat.back = mat 
+	mat = mat[!is.na(mat)]
+    mat = rank(mat, ties.method = "average")/length(mat);
+    mat.back[!is.na(mat.back)] = mat 
+    mat.back}
+
+
+phylo.profile = function(sr.gene.all){
+	sr.gene1 = sr.gene.all
+	sr.phylo =  cbind(match(sr.gene1$rescuer, phylo$genes), match(sr.gene1$vulnerable, phylo$genes))
+	featureMat = (phylo[sr.phylo[,1],-(1:3)] - phylo[sr.phylo[,2],-(1:3)])^2
+	featureMat=as.matrix(featureMat)
+	class(featureMat) <- "numeric"	
+	featureMat %*% t(feature.weight)}
+
+
+rank.norm= function(ss) {
+	out = rank(ss, na.last="keep")/max(1, sum(!is.na(ss)))
+	out[is.na(out)] = 1
+	out}
+
+
+getAUC <- function(pval,flag){
+	na.inx=which(!is.na(flag) & !is.na(pval))
+	pval=pval[na.inx]
+	flag=flag[na.inx]
+	pred <- prediction(pval, flag) # library(ROCR)
+	perf <- performance(pred,"auc")
+	auc=perf@y.values[[1]][1]
+	
+	perf1 <- performance(pred, measure="prec", x.measure="rec")
+	rec=perf1@x.values[[1]]
+	prec=recall=perf1@y.values[[1]]
+	prr <- trapz(rec[2:length(rec)], prec[2:length(prec)]) # library(pracma)
+	return(c(auc,prr))}
+
+bin_matrix <- function(x, direction = "row", bin = TRUE, split = 3) {
+  if (direction == "column") {
+    rank_norm <- apply(x, 2, rank.array)
+    if (split == 2) {q2 <- 1 * (rank_norm >= 1 / 2)}
+    if (split == 3) {q2 <- 1 * (rank_norm > 1 / 3) + 1 * (rank_norm > 2 / 3)}
+  }
+  if (direction == "row") {
+    rank_norm <- t(apply(x, 1, rank.array))
+    if (split == 2) {q2 <- 1 * (rank_norm >= 1 / 2)}
+    if (split == 3) {q2 <- 1 * (rank_norm > 1 / 2) + 1 * (rank_norm > 2 / 3)}
+  }
+  if (bin == TRUE) {return(q2)}
+  if (bin == FALSE) {return(rank_norm)} }
+
+# Count up/down regulated genes for normalized SR score
+down_counts <- function(x){ifelse(x < 0.33, 1, 0)} # Check the down-regulated gene 
+up_counts <- function(x){ifelse(x > (1-0.33), 1, 0)} # Check the up-regulated gene 
+
+
+# SR_DD
+sr.find.dd <- function(sr.final1){
+  sl.res=NA; FDR=0.2; flag=1   # step I: hypergeometric (updated)
+  hyper <- apply(sr.final1[,c(3,4,5)], 2, function(x) p.adjust (x, method = "BH")) # Multiple testing correction
+  colnames(hyper) <- c("BH_pval.mRNA1_2" ,  "BH_pval.mRNA1_3" , "BH_pval.mRAN.up_1")
+  sr.final1 <- cbind(sr.final1, hyper)
+  iy = which(apply(hyper, 1, min)< FDR) # Adjusted p-value with BH method length(iy) = 892
+  
+  if (length(iy)>1) {
+  flag=2
+  sr.final1 = sr.final1[iy,] # step II: survival 
+  clinical.fdr2 = apply(sr.final1[,c(7,9)], 2, function(x) p.adjust (x, method = "BH")) # P-value for two datasets (aa, bb)
+  colnames(clinical.fdr2) <- c("BH_bb_pvalue_tcga", "BH_bb_pvalue_meta")
+  sr.final1 <- cbind(sr.final1, clinical.fdr2) # Save survival analysis results 
+  iz = which(rowSums(clinical.fdr2 < FDR ) >= 1) # Adjusted p-value with BH method length(iz) = 11
+    
+  if (length(iz)>1) {
+  flag=3
+  sr.final1=sr.final1[iz,] # step III: phylogenetic (updated) 
+  ix=which(sr.final1[,10] < 2.315712e+01 | sr.final1[,11] < 2.315712e+01 ) # PDCD1, CD274 scores
+  sr.final1=sr.final1[ix,]}}
+  if (flag==3) sl.res=sr.final1
+  return(sl.res)}
+
+sr.ranking.dd <-function(sr.final1){
+  ps1 = sr.final1[,10] ; ps2 = sr.final1[,11] ## updated 								
+  ps = ifelse(ps1 >= ps2, ps2, ps1)	
+  ii = order(ps,decreasing = FALSE) # sort phylogenetic distance
+  return(ii)}
+
+sr.score.dd <- function(dat, sr.final1){
+  score1 = rep(0,ncol(dat$mRNA))	
+  partners1 = match(sr.final1[,2], dat$genes)
+  partners1 = partners1[!is.na(partners1)]
+  if (length(partners1)==1) 
+    score1=1*(dat$mRNA.rank2[partners1,] < 0.33) ## mRNA.rank2 -> required bin-matrix
+  if (length(partners1) >1) 
+    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) ## f (proportion of DD -> cancer cell survival)
+  score1=1-score1		## 1-f -> cancer cell death
+  return(score1)}
+
+new.sr.score.dd <- function(dat, sr.final1){
+  score1 = rep(0,ncol(dat$mRNA))	
+  partners1 = match(sr.final1[,2], dat$genes)
+  partners1 = partners1[!is.na(partners1)]
+  if (length(partners1)==1)
+    score1=1*(dat$mRNA.rank2[partners1,] < 0.33)  ## mRNA.rank2 -> required bin-matrix
+  if (length(partners1) >1)
+    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) ## f
+  
+  sub_gene <- intersect(nanostring, rownames(dat$mRNA)) ## nanostring gene list 
+  new_data <- dat$mRNA[rownames(dat$mRNA) %in% sub_gene,]
+  new_data2 <- bin_matrix(new_data, direction = "row", bin = FALSE)
+  new_data2 <- na.omit(new_data2)  ## remove NA
+  whole_down <- apply(new_data2, 2 , down_counts)
+  whole_down_patient <- as.numeric(colSums(whole_down))  ## count the down-regulated gene for each patient
+  whole_score <- whole_down_patient / dim(new_data2)[1]
+ 
+  new_score = (1- score1)/ (1-whole_score) ## 1-f
+  
+  return(new_score)}
+
+eval.auc.dd = function(sr.final, dat, ires1, iirs1){# target gene expression: PD1/PDL1
+  res = NULL
+  sr.x = cbind(genes[sr.final[,1]],genes[sr.final[,2]]) # gene names
+  score1 = new.sr.score.dd(dat, sr.x) # SR score
+  a <- which(rownames(dat$mRNA) == "PDCD1"); b <- which(rownames(dat$mRNA) == "CD274") # target genes
+  target <- as.numeric(dat$mRNA[a,])*as.numeric(dat$mRNA[b,]) # simple product
+  pval = score1[c(ires1,iirs1)] # reorder SR score
+  target = target[c(ires1,iirs1)] # reorder target gene expression
+  flag = c(rep(1,length(ires1)),rep(0,length(iirs1)))
+  res$score = pval; res$flag=flag # SR score
+  res$score2 = pval*rank.norm(target) # BC-SELECT 
+  res$score3 = rank.norm(target) # Normalized target expression
+  res$sr.x=sr.x
+  return(res)}
+
+
+# For Monte Carlo experiment random sampling genes (required reordering during simulation)----
+null_sr.score <- function(dat, null_genes){
+  score1=rep(0,ncol(dat$mRNA))	
+  partners1=match(null_genes, dat$genes)
+  partners1=partners1[!is.na(partners1)]
+  if (length(partners1)==1) 
+    score1=1*(dat$mRNA.rank2[partners1,] < 0.33) ## mRNA.rank2 -> required bin-matrix
+  if (length(partners1) >1) 
+    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) ## f
+  
+  score1 = 1- score1		## 1-f
+  return(score1)}
+
+
+target_value <- function(dat){
+  a <- which(rownames(dat$mRNA) == "PDCD1"); b <- which(rownames(dat$mRNA) == "CD274") # Target genes
+  target <- as.numeric(dat$mRNA[a,])*as.numeric(dat$mRNA[b,]) # Simple product
+  return(target)}
+
