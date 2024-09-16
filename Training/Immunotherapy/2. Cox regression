@@ -1,0 +1,75 @@
+# Tumor screen (cox regression): for each dataset (breast cancer TCGA, METABRIC)
+
+coxph.run = function(formula.list, data1){
+  fmla <- as.formula(paste(" Surv(time,status) ~ ", paste(formula.list, collapse= "+")))
+  cox.out = coxph(fmla, data=data1); 
+  aa  = summary(cox.out); out = aa$coefficients["cov", ] ## saved values = "cov"
+  out}
+
+coxph.robust = function(data1, f1.list) {coxph.run(c(f1.list), data1)} 
+
+sr.clinical.screen = function(pair, prob, pheno, f1.list=NULL){
+  g1 = prob$mRNA.norm[pair[1],] # partner ID 
+  g2 = prob$mRNA.norm[pair[2],] # target ID (PD1/PDL1)
+  f1 = prob$mRNAq2[pair[1],]  # partner ID
+  f2 = prob$mRNAq2[pair[2],]  # target ID (PD1/PDL1)
+  surv.strata = data.frame(pheno$time, pheno$status); colnames(surv.strata) <- c("time","status")
+  
+  var <- pheno %>% select(any_of(c("age","sex","race","stage")))
+  f1.list = names(var) # Select any possible variables
+  f1.list <- ifelse(f1.list %in% c("sex","race","stage"), paste("strata(",f1.list,")", sep="" ), f1.list) # change to strata
+  surv.strata = data.frame(surv.strata, var)
+  
+  dt1 = cbind(surv.strata, cbind(g1 , g2))
+  cov = ifelse(f2 == 0 & f1 == 0, 1, 0 ) # SR DD
+  dt1$cov = qnorm.array(cov)
+  cox.out2 = coxph.robust(f1.list = c("g1",  "g2",  f1.list, "cov"),  data1=dt1) 
+  uu = c(cox.out2)
+  return(uu)} 
+
+# TCGA cox regression with 4 variables
+cox.mRNA = mclapply(1:nrow(sr.curr), function(tt) { 
+  rs=rep(NA,10)    
+  sr.tmp=sr.curr[tt,]; prob = TCGA.list # check the input
+  if(sum(prob$mRNAq2[sr.tmp[2],]==0 & prob$mRNAq2[sr.tmp[1],]==0, na.rm=T)>=1 )
+    rs=sr.clinical.screen(sr.curr[tt,], prob = TCGA.list, pheno = TCGA.surv) 
+  return(rs)}, mc.cores=32)
+cox.du.mRNA.curr = do.call(rbind, cox.mRNA)
+cox.du.mRNA.curr = cox.du.mRNA.curr[,1:5]
+colnames(cox.du.mRNA.curr) <- c("bb_coef","bb_exp(coef)","bb_se(coef)","bb_z","bb_pvalue")
+cox.du.mRNA=cbind(sr.curr,cox.du.mRNA.curr)
+rm(cox.du.mRNA.curr, cox.mRNA)
+
+clinical.beta = cox.du.mRNA[,c(3)] # coefficient for bb
+class(clinical.beta) = "numeric"
+
+clinical.p = cox.du.mRNA[,c(7)] # p-values for bb (unadjusted p-value)
+class(clinical.p) = "numeric"
+
+TCGA_clinp=cbind(clinical.beta,clinical.p)
+colnames(TCGA_clinp) <- c("bb_coef_tcga","bb_pvalue_tcga")
+rm(clinical.beta, clinical.p, cox.du.mRNA)
+
+# METABRIC cox regression with 2 variables
+cox.mRNA = mclapply(1:nrow(sr.curr), function(tt) { 
+  rs=rep(NA,10)    
+  sr.tmp=sr.curr[tt,];prob = metabric.list # check the input
+  if(sum(prob$mRNAq2[sr.tmp[2],]==0 & prob$mRNAq2[sr.tmp[1],]==0,na.rm=T)>=1 )
+    rs=sr.clinical.screen(sr.curr[tt,], prob = metabric.list, pheno = metabric.surv) 
+  return(rs)}, mc.cores=32)
+cox.du.mRNA.curr = do.call(rbind, cox.mRNA)
+cox.du.mRNA.curr = cox.du.mRNA.curr[,1:5]
+colnames(cox.du.mRNA.curr) <- c("bb_coef","bb_exp(coef)","bb_se(coef)","bb_z","bb_pvalue")
+cox.du.mRNA=cbind(sr.curr,cox.du.mRNA.curr)
+rm(cox.du.mRNA.curr, cox.mRNA)
+
+clinical.beta = cox.du.mRNA[,c(3)] # coefficient for bb
+class(clinical.beta) = "numeric"
+
+clinical.p = cox.du.mRNA[,c(7)] # p-values for bb (unadjusted p-value)
+class(clinical.p) = "numeric"
+
+metabric_clinp=cbind(clinical.beta,clinical.p)
+colnames(metabric_clinp) <- c("bb_coef_meta","bb_pvalue_meta")
+rm(clinical.beta, clinical.p, cox.du.mRNA)
+
