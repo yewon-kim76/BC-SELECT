@@ -1,0 +1,193 @@
+# Evaluation: find SR partner gene pairs, make a decision (prediction)
+
+rm(list=ls())
+library(readxl); library(rmarkdown);library(ggplot2); library(tidyverse); library(dplyr); library(pROC); library(MKmisc)
+library(viridis); library(forcats); library(data.table); library(Rcpp); 
+library(survival); library(parallel); library(pracma); library(ROCR);
+set.seed(12345)
+Sys.setenv("PKG_CXXFLAGS"="-fopenmp")
+Sys.setenv("PKG_LIBS"="-fopenmp")
+setwd("/data/kimy35/SELECT/select_targeted/cox_sort_12_05/R_immuno_data")
+source("./source2.R") # source functions
+
+sr.tot <- readRDS("./SR_DD.rds") # load training results
+genes <- readRDS(file = "./TCGA_genes.rds")
+nanostring=fread("/data/kimy35/SELECT/select_immuno/data/nanostring.txt")$"Gene Name" # 1154 immune related genes
+
+# load datasets
+YALE <- readRDS("./YALE.rds") # Durvalumab, NCT02489448
+ISPY_pemb <- readRDS("./ISPY_pemb.rds") # Pembrolizumab, ISPY-2
+GSE173839_ISPY2 <- readRDS("./GSE173839_ISPY2.rds") # Durvalumab, ISPY-2
+
+# identify top 10 SR partner genes
+sr.final=NULL; tgs=c("PD1/PDL1") # current target: anti-PD1/PDL1
+ix = which(as.numeric(sr.tot[,1]) %in% match(tgs, genes))
+sr.tot1 = sr.find.dd(sr.tot[ix,]) # 10 genes pass 3 filters
+rnk=sr.ranking.dd(sr.tot1) # sort the genes based on minimal phylogenic scores (PDCD1, CD274)
+thr = 10; sr.final=rbind(sr.final, sr.tot1[rnk[1:thr],]) 
+genes[unname(sr.final[,2])]
+# "CEP55" "PPARGC1B" "TMEM173" "LILRB3" "C2" "LAG3" "TTK" "APH1B" "CCND3" "REN" 
+
+# Durvalumab, NCT02489448 (YALE)
+auc=lgp1=eff1=rep(NA,1); sco=NULL;sco$pval=NA
+ires1 = which(YALE$res_yale$binary == "1") # index of response
+iirs1 = which(YALE$res_yale$binary == "0") # index of non-response
+sco = eval.auc.dd(sr.final, YALE, ires1, iirs1)
+s_yale_AUC1 = ceiling(getAUC(sco$score, sco$flag)[1]*100)/100; s_yale_sr_genes_10 <- sco$sr.x[,2]; print(round(s_yale_AUC1,3))
+s_yale_AUC2 = ceiling(getAUC(sco$score2, sco$flag)[1]*100)/100; print(round(s_yale_AUC2,3))
+s_yale_AUC3 = ceiling(getAUC(sco$score3, sco$flag)[1]*100)/100; print(round(s_yale_AUC3,3))
+
+# GSE194040 Pembrolizumab, ISPY-2 
+auc=lgp1=eff1=rep(NA,1); sco=NULL;sco$pval=NA
+ires1 = which(ISPY_pemb$res_ispy_pemb$pCR == "1") # index of response
+iirs1 = which(ISPY_pemb$res_ispy_pemb$pCR == "0") # index of non-response
+sco = eval.auc.dd(sr.final, ISPY_pemb, ires1, iirs1)
+s_ispy_pemb_AUC1 = ceiling(getAUC(sco$score, sco$flag)[1]*100)/100 ; s_ISPY_pemb_sr_genes_10 <- sco$sr.x[,2]; print(round(s_ispy_pemb_AUC1,3))
+s_ispy_pemb_AUC2 = ceiling(getAUC(sco$score2, sco$flag)[1]*100)/100; print(round(s_ispy_pemb_AUC2,3))
+s_ispy_pemb_AUC3 = ceiling(getAUC(sco$score3, sco$flag)[1]*100)/100; print(round(s_ispy_pemb_AUC3,3))
+
+# GSE173839, Durvalumab, ISPY-2
+auc=lgp1=eff1=rep(NA,1); sco=NULL;sco$pval=NA
+ires1 = which(GSE173839_ISPY2$res_GSE173839_patient$binary == "1") # index of response
+iirs1 = which(GSE173839_ISPY2$res_GSE173839_patient$binary == "0") # index of non-response
+sco = eval.auc.dd(sr.final,GSE173839_ISPY2,ires1,iirs1)
+s_ispy_durv_AUC1 = ceiling(getAUC(sco$score, sco$flag)[1]*100)/100; s_ISPY_Durv_sr_genes_10 <- sco$sr.x[,2]; print(round(s_ispy_durv_AUC1,3))
+s_ispy_durv_AUC2 = ceiling(getAUC(sco$score2, sco$flag)[1]*100)/100; print(round(s_ispy_durv_AUC2,3))
+s_ispy_durv_AUC3 = ceiling(getAUC(sco$score3, sco$flag)[1]*100)/100; print(round(s_ispy_durv_AUC3,3))
+
+
+# AUC Null distribution for checking significance based on the empirical p-values
+# Durvalumab, NCT02489448 (YALE)
+yale_bcAUC1 <- NULL; yale_bcAUC2 <- NULL # saved AUC
+bc_yale_genes <- YALE$genes[-which(YALE$genes %in% s_yale_sr_genes_10)] # remove SR partners
+bc_yale_genes <- bc_yale_genes[! bc_yale_genes %in% c('PDCD1', 'CD274')] # remove target gene exp
+
+sub_gene <- intersect(nanostring, rownames(YALE$mRNA)) # nanostring gene list 
+new_data <- YALE$mRNA[rownames(YALE$mRNA) %in% sub_gene,]
+new_data2 <- bin_matrix(new_data, direction = "row", bin = FALSE)
+new_data2 <- na.omit(new_data2)  # remove NA
+whole_down <- apply(new_data2, 2 , down_counts)
+whole_down_patient <- as.numeric(colSums(whole_down))  # count the down-regulated gene for each patient
+whole_score <- whole_down_patient / dim(new_data2)[1]
+
+for(i in 1:5000){
+  pair <- sample(bc_yale_genes, size = 12, replace = FALSE, prob = NULL) 
+  null_sr_score <- null_sr.score2(YALE, pair[1:10]) 
+  pval <- null_sr_score[c(which(YALE$res_yale$binary == "1"),
+                          which(YALE$res_yale$binary == "0"))] # reorder
+  flag <- c(rep(1,25),rep(0,25)); target <- target_value2(YALE) 
+  target <- target[c(which(YALE$res_yale$binary == "1"),
+                     which(YALE$res_yale$binary == "0"))]  # reorder
+  yale_bcAUC1[i] <- getAUC(pval, flag)[1] # SR partner only
+  yale_bcAUC2[i] <- getAUC( (pval* rank.norm(target)), flag)[1] } # BC-SELECT
+
+hist(yale_bcAUC1); hist(yale_bcAUC2);round(s_yale_AUC1,2);round(s_yale_AUC2,2)
+round(pnorm(s_yale_AUC1, mean = mean(yale_bcAUC1), sd = sd(yale_bcAUC1), lower.tail=FALSE),2) # SR partner only
+round(pnorm(s_yale_AUC2, mean = mean(yale_bcAUC2), sd = sd(yale_bcAUC2), lower.tail=FALSE),2) # BC-SELECT
+
+# empirical p-value: target gene expression case
+control_bc <-NULL;
+control_gene_bc <- YALE$genes[-which(YALE$genes %in% s_yale_sr_genes_10)] # remove SR partners
+control_gene_bc <- control_gene_bc[! control_gene_bc %in% c('PDCD1', 'CD274')] # remove target gene exp
+
+for(i in 1:5000){
+  nn_gene <- sample(control_gene_bc, size = 2, replace = FALSE, prob = NULL) 
+  pval_bc <- YALE$mRNA[nn_gene, c(which(YALE$res_yale$binary == "1"), which(YALE$res_yale$binary == "0"))] # reorder
+  pval_bc2 <- as.numeric(pval_bc[1,])*as.numeric(pval_bc[2,])
+  flag <- c(rep(1,25),rep(0,25)); control_bc[i] <- getAUC(rank.norm(pval_bc2), flag)[1]
+  rm(nn_gene)}
+
+hist(control_bc) ; round(s_yale_AUC3,2)
+round(pnorm(s_yale_AUC3, mean = mean(control_bc), sd = sd(control_bc), lower.tail=FALSE),2) # target gene expression
+
+
+# GSE194040 Pembrolizumab, ISPY-2 
+ISPY_bcAUC1 <- NULL; ISPY_bcAUC2 <- NULL # Saved AUC
+bc_ISPY_genes <- ISPY_pemb$genes[-which(ISPY_pemb$genes %in% s_ISPY_pemb_sr_genes_10)] # remove SR partners
+bc_ISPY_genes <- bc_ISPY_genes[! bc_ISPY_genes %in% c('PDCD1', 'CD274')] # remove target gene exp
+
+sub_gene <- intersect(nanostring, rownames(ISPY_pemb$mRNA)) # nanostring gene list 
+new_data <- ISPY_pemb$mRNA[rownames(ISPY_pemb$mRNA) %in% sub_gene,]
+new_data2 <- bin_matrix(new_data, direction = "row", bin = FALSE)
+new_data2 <- na.omit(new_data2)  # remove NA
+whole_down <- apply(new_data2, 2 , down_counts)
+whole_down_patient <- as.numeric(colSums(whole_down))  # count the down-regulated gene for each patient
+whole_score <- whole_down_patient / dim(new_data2)[1]
+
+for(i in 1:5000){ 
+  pair <- sample(bc_ISPY_genes, size = 12, replace = FALSE, prob = NULL) 
+  null_sr_score <- null_sr.score2(ISPY_pemb, pair[1:10]) 
+  pval <- null_sr_score[c(which(ISPY_pemb$res_ispy_pemb$pCR == "1"),
+                          which(ISPY_pemb$res_ispy_pemb$pCR == "0"))] # reorder
+  flag <- c(rep(1,31),rep(0,38)); target <- target_value2(ISPY_pemb) 
+  target <- target[c(which(ISPY_pemb$res_ispy_pemb$pCR == "1"),
+                     which(ISPY_pemb$res_ispy_pemb$pCR == "0"))] # reorder
+  ISPY_bcAUC1[i] <- getAUC(pval, flag)[1] # SR partner only
+  ISPY_bcAUC2[i] <- getAUC((pval* rank.norm(target)), flag)[1] } # BC-SELECT
+
+hist(ISPY_bcAUC1); hist(ISPY_bcAUC2); round(s_ispy_pemb_AUC1,2); round(s_ispy_pemb_AUC2,2)
+round(pnorm(s_ispy_pemb_AUC1, mean = mean(ISPY_bcAUC1), sd = sd(ISPY_bcAUC1), lower.tail=FALSE), 2) # SR partner only
+round(pnorm(s_ispy_pemb_AUC2, mean = mean(ISPY_bcAUC2), sd = sd(ISPY_bcAUC2), lower.tail=FALSE), 2) # BC-SELECT
+
+# empirical p-value: target gene expression case
+control_bc <-NULL;
+control_gene_bc <- ISPY_pemb$genes[-which(ISPY_pemb$genes %in% s_ISPY_pemb_sr_genes_10)] # remove SR partners 
+control_gene_bc <- control_gene_bc[! control_gene_bc %in% c('PDCD1', 'CD274')] # remove target gene exp
+
+for(i in 1:5000){
+  nn_gene <- sample(control_gene_bc, size = 2, replace = FALSE, prob = NULL) 
+  pval_bc <- ISPY_pemb$mRNA[nn_gene, c(which(ISPY_pemb$res_ispy_pemb$pCR == "1"), 
+                                       which(ISPY_pemb$res_ispy_pemb$pCR == "0"))] # reorder
+  pval_bc2 <- as.numeric(pval_bc[1,])*as.numeric(pval_bc[2,])
+  flag <- c(rep(1,31),rep(0,38)); control_bc[i] <- getAUC(rank.norm(pval_bc2), flag)[1]
+  rm(nn_gene)}
+
+hist(control_bc); round(s_ispy_pemb_AUC3,2)
+round(pnorm(s_ispy_pemb_AUC3, mean = mean(control_bc), sd = sd(control_bc), lower.tail=FALSE),2) # target gene expression
+
+
+# GSE173839, Durvalumab, ISPY-2
+ISPY_bcAUC1 <- NULL; ISPY_bcAUC2 <- NULL # Saved AUC
+bc_ISPY_genes <- GSE173839_ISPY2$genes[-which(GSE173839_ISPY2$genes %in% s_ISPY_Durv_sr_genes_10)] # remove SR partners 
+bc_ISPY_genes <- bc_ISPY_genes[! bc_ISPY_genes %in% c('PDCD1', 'CD274')]  # remove target gene exp
+
+sub_gene <- intersect(nanostring, rownames(GSE173839_ISPY2$mRNA)) # nanostring gene list 
+new_data <- GSE173839_ISPY2$mRNA[rownames(GSE173839_ISPY2$mRNA) %in% sub_gene,]
+new_data2 <- bin_matrix(new_data, direction = "row", bin = FALSE)
+new_data2 <- na.omit(new_data2)  ## remove NA
+whole_down <- apply(new_data2, 2 , down_counts)
+whole_down_patient <- as.numeric(colSums(whole_down))  # count the down-regulated gene for each patient
+whole_score <- whole_down_patient / dim(new_data2)[1]
+
+for(i in 1:5000){ 
+  pair <- sample(bc_ISPY_genes, size = 12, replace = FALSE, prob = NULL) 
+  null_sr_score <- null_sr.score2(GSE173839_ISPY2, pair[1:10]) 
+  pval <- null_sr_score[c(which(GSE173839_ISPY2$res_GSE173839_patient$binary == "1"),
+                          which(GSE173839_ISPY2$res_GSE173839_patient$binary == "0"))] # reorder
+  flag <- c(rep(1,29),rep(0,42)); target <- target_value2(GSE173839_ISPY2)
+  target <- target[c(which(GSE173839_ISPY2$res_GSE173839_patient$binary == "1"),
+                     which(GSE173839_ISPY2$res_GSE173839_patient$binary == "0"))] # reorder
+  ISPY_bcAUC1[i] <- getAUC(pval, flag)[1] # SR partner only
+  ISPY_bcAUC2[i] <- getAUC( (pval* rank.norm(target)), flag)[1] } # BC-SELECT
+
+hist(ISPY_bcAUC1); hist(ISPY_bcAUC2); round(s_ispy_durv_AUC1,2); round(s_ispy_durv_AUC2,2)
+round(pnorm(s_ispy_durv_AUC1, mean = mean(ISPY_bcAUC1), sd = sd(ISPY_bcAUC1), lower.tail=FALSE),2) # SR partner only
+round(pnorm(s_ispy_durv_AUC2, mean = mean(ISPY_bcAUC2), sd = sd(ISPY_bcAUC2), lower.tail=FALSE),2) # BC-SELECT
+
+
+# empirical p-value: target gene expression case
+control_bc <-NULL;
+control_gene_bc <- GSE173839_ISPY2$genes[-which(GSE173839_ISPY2$genes %in% s_ISPY_Durv_sr_genes_10)] # remove SR partners
+control_gene_bc <- control_gene_bc[! control_gene_bc %in% c('PDCD1', 'CD274')] # remove target gene exp
+
+for(i in 1:5000){
+  nn_gene <- sample(control_gene_bc, size = 2, replace = FALSE, prob = NULL) 
+  pval_bc <- GSE173839_ISPY2$mRNA[nn_gene, c(which(GSE173839_ISPY2$res_GSE173839_patient$binary == "1"),
+                                             which(GSE173839_ISPY2$res_GSE173839_patient$binary == "0"))] # reorder
+  pval_bc2 <- as.numeric(pval_bc[1,])*as.numeric(pval_bc[2,])
+  flag <- c(rep(1,29),rep(0,42)); control_bc[i] <- getAUC(rank.norm(pval_bc2), flag)[1]
+  rm(nn_gene)}
+
+hist(control_bc); round(s_ispy_durv_AUC3,2)
+round(pnorm(s_ispy_durv_AUC3, mean = mean(control_bc), sd = sd(control_bc), lower.tail=FALSE), 2) # target gene expression
+
