@@ -221,5 +221,3 @@ for(i in 1:length(drug_screen_data$basu$genes)){
 
 setwd("/data/kimy35/SELECT/select_targeted/Target_training_BC-SELECT")
 saveRDS(drug_screen_result, file = "CYP19A1_drug_screen.rds") # save the training results
-
-rm(i, gene, test, screen, drug_screen_data)
