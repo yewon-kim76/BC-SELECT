@@ -1,4 +1,5 @@
 # Cox regression
+
 # Load libraries 
 library(tidyverse); library(optparse); library(survival); library(parallel)
 
@@ -13,8 +14,7 @@ qnorm_normalization <- function(x) {
 # Function for SL
 cox_sl_pair <- function(sl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # define genes
                         prob = data, # gene expression data
-                        clinical = clinical # phenotype data
-                        ){
+                        clinical = clinical ){ # phenotype data
   rows <- list()
   
   if (sl_pair["GENE_A"] %in% prob$genes & sl_pair["GENE_B"] %in% prob$genes) {
@@ -93,8 +93,7 @@ saveRDS(cox_bc_results, file = "CYP19A1_cox_bc.rds") # save dataset
 # Function for SDL
 cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # define genes
                          prob = data, # RNA-seq data
-                         clinical = clinical, # phenotype data
-                         ){
+                         clinical = clinical ){ # phenotype data
   rows <- list()
   
   if (sdl_pair["GENE_A"] %in% prob$genes & sdl_pair["GENE_B"] %in% prob$genes) {
@@ -151,7 +150,7 @@ cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # d
       rows[[length(rows) + 1]] <- res } }
   bind_rows(rows) }
 
-# Fit--------------------------------------------------------------------
+# Fit
 # patient level data: breast cabcer TCGA and METABRIC
 
 drug_target = "ERBB2"
