@@ -1,0 +1,169 @@
+# Cox regression
+# Load libraries 
+library(tidyverse); library(optparse); library(survival); library(parallel)
+
+# Related functions 
+qnorm_normalization <- function(x) {
+  x_back <- x # saving x_back allows us to keep NAs that rank() removes
+  x <- rank(x, ties.method = "average", na.last = NA)
+  x <- qnorm(x / (length(x) + 1))
+  x_back[!is.na(x_back)] <- x
+  return(x_back)}
+
+# Function for SL
+cox_sl_pair <- function(sl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # define genes
+                        prob = data, # gene expression data
+                        clinical = clinical # phenotype data
+                        ){
+  rows <- list()
+  
+  if (sl_pair["GENE_A"] %in% prob$genes & sl_pair["GENE_B"] %in% prob$genes) {
+  # only include cases where SL pairs are in dataset
+  # build dataframe for cox regression
+  
+  cox_df <- clinical %>%
+    add_column(
+      g1 = prob$mrna_qnorm[sl_pair["GENE_A"], ], g2 = prob$mrna_qnorm[sl_pair["GENE_B"], ],
+      g1_q2 = prob$mrna_q2[sl_pair["GENE_A"], ], g2_q2 = prob$mrna_q2[sl_pair["GENE_B"], ] )
+  cox_df <- cox_df[complete.cases(cox_df), ] # only include samples where all covariates and cov +g1 +g2 are non-na.
+
+  if (nrow(cox_df) > 10) { # must have at least 10 patients with all variables going into model
+    cox_df <- cox_df %>% mutate(cov = as.numeric(g1_q2 == 0 & g2_q2 == 0)) # both of them are lower expressed, cov = 1
+      
+    # Model 1: model without controlling for confounding factors
+    uncntrl <- coxph(Surv(time, status) ~ cov, data = cox_df)
+    model1 <- summary(uncntrl)
+
+    # add possible covariates
+    var <- cox_df %>% select(any_of(c("age","sex","race","stage")))
+    f1.list = names(var) ## select any possible variables
+    f1.list <- ifelse(f1.list %in% c("sex","race","stage"), paste("strata(",f1.list,")", sep="" ), f1.list) # change to strata
+      
+    # Model 2: reduced model, without the interaction term (cov)
+    formulaString <- paste( "Surv(time, status) ~", paste(f1.list, collapse = " + ") )
+    cntrl_reduced <- coxph(as.formula(formulaString), data = cox_df)
+    model2 <- summary(cntrl_reduced)
+     
+    # Model 3: full model, with interaction term (cov)
+    formulaString <- paste( "Surv(time, status) ~ cov +", paste(f1.list, collapse = " + ") )
+    cntrl_full <- coxph(as.formula(formulaString), data = cox_df)
+    model3 <- summary(cntrl_full)
+    
+ # lrt = log likelihood ratio test. To test the significance of the interaction, 
+ # we need to compute the difference between the log likelihood statistic of the reduced model
+ # which does not contain the interaction term (model 2 without cov) and the log likelihood
+
+ # statistic of the full model containing the interaction term (model 3 with cov)
+    cov_lrt <- (2) * (model3$loglik[2] - model2$loglik[2])
+    res <- list(
+      test = "cov",
+      GENE_A = drug_target,
+      GENE_B = sl_pair["GENE_B"],
+      coef_unadj = model1$coefficients[1], # cov coefficient, without covariates model
+      pval_unadj = model1$coefficients[1, 5], # cov p-value, without covariates model
+      coef_adj = model3$coefficients[1], # cov coefficient, with covariates model
+      pval_adj = model3$coefficients[1, 5], # cov p-value, with covariates model
+      lrt = cov_lrt,
+      pval_lrt = 1 - pchisq(cov_lrt, df = 1),
+      pts_w = sum(cox_df$cov == 1),
+      pts_wo = sum(cox_df$cov == 0),
+      events_w = sum(cox_df$status == 1 & cox_df$cov == 1),
+      events_wo = sum(cox_df$status == 1 & cox_df$cov == 0))
+      
+    rows[[length(rows) + 1]] <- res } }
+  bind_rows(rows) }
+
+# Fit
+# patient level data: breast cacner TCGA and METABRIC
+
+cox_results <- NULL; 
+for(i in 1:19001){
+  gene = TCGA.list$genes[i]
+  test_TCGA <- cox_sl_pair(sl_pair = c(GENE_A = drug_target, GENE_B = gene),
+                           prob = BC.list, # defind RNA-seq data
+                           clinical = BC.surv) # defind phenotype data
+  cox_bc_results <- rbind(cox_bc_results, test_TCGA)
+  print(i)}
+
+
+setwd("/data/kimy35/SELECT/select_targeted/Target_training_BC-SELECT")
+saveRDS(cox_bc_results, file = "CYP19A1_cox_bc.rds") # save dataset
+
+
+# Function for SDL
+cox_sdl_pair <- function(sdl_pair = c(GENE_A = "ALK", GENE_B = "LINC00115"), # define genes
+                         prob = data, # RNA-seq data
+                         clinical = clinical, # phenotype data
+                         ){
+  rows <- list()
+  
+  if (sdl_pair["GENE_A"] %in% prob$genes & sdl_pair["GENE_B"] %in% prob$genes) {
+  # only include cases where SDL pairs are in dataset
+  # build dataframe for cox regression
+  cox_df <- clinical %>%
+    add_column(
+      g1 = prob$mrna_qnorm[sdl_pair["GENE_A"], ], g2 = prob$mrna_qnorm[sdl_pair["GENE_B"], ],
+      g1_q2 = prob$mrna_q2[sdl_pair["GENE_A"], ], g2_q2 = prob$mrna_q2[sdl_pair["GENE_B"], ] )
+    cox_df <- cox_df[complete.cases(cox_df), ] # only include samples where all covariates and cov +g1 +g2 are non-na.
+    
+  if (nrow(cox_df) > 10) { # must have at least 10 patients with all variables going into model
+  cox_df <- cox_df %>% mutate(cov = as.numeric(g1_q2 == 0 & g2_q2 == 2))  # cov=1 if gene_a low and gene_b high
+  
+  # Model 1: model without controlling for confounding factors
+  uncntrl <- coxph(Surv(time, status) ~ cov, data = cox_df); model1 <- summary(uncntrl)
+      
+  # add possible covariates
+  var <- cox_df %>% select(any_of(c("age","sex","race","stage")))
+  f1.list = names(var) ## select any possible variables, and change to strata
+  f1.list <- ifelse(f1.list %in% c("sex","race","stage"), paste("strata(",f1.list,")", sep="" ), f1.list) 
+      
+  # Model 2: reduced model, without the interaction term (cov)
+  formulaString <- paste( "Surv(time, status) ~", paste(f1.list, collapse = " + ") )
+  cntrl_reduced <- coxph(as.formula(formulaString), data = cox_df)
+  model2 <- summary(cntrl_reduced)
+      
+  # Model 3: full model, with interaction term (cov)
+  formulaString <- paste( "Surv(time, status) ~ cov +", paste(f1.list, collapse = " + ") )
+  cntrl_full <- coxph(as.formula(formulaString), data = cox_df)
+  model3 <- summary(cntrl_full)
+  
+  # lrt = Log likelihood ratio test. To test the significance of the interaction, 
+  # we need to compute the difference between the log likelihood statistic of the reduced model
+  # which does not contain the interaction term (model 2 without cov) and the log likelihood
+      
+  # statistic of the full model containing the interaction term (model 3 with cov)
+  cov_lrt <- (2) * (model3$loglik[2] - model2$loglik[2])
+    res <- list(
+      test = "cov",
+      GENE_A = drug_target,
+      GENE_B = sdl_pair["GENE_B"],
+      coef_unadj = model1$coefficients[1], ## cov coefficient, without covariates model
+      pval_unadj = model1$coefficients[1, 5], ## cov p-value, without covariates model
+      coef_adj = model3$coefficients[1], ## cov coefficient, with covariates model
+      pval_adj = model3$coefficients[1, 5], ## cov p-value, with covariates model
+      lrt = cov_lrt,
+      pval_lrt = 1 - pchisq(cov_lrt, df = 1),
+      pts_w = sum(cox_df$cov == 1),
+      pts_wo = sum(cox_df$cov == 0),
+      events_w = sum(cox_df$status == 1 & cox_df$cov == 1),
+      events_wo = sum(cox_df$status == 1 & cox_df$cov == 0))
+      
+      rows[[length(rows) + 1]] <- res } }
+  bind_rows(rows) }
+
+# Fit--------------------------------------------------------------------
+# patient level data: breast cabcer TCGA and METABRIC
+
+drug_target = "ERBB2"
+cox_results <- NULL;
+for(i in 1:19001){
+  gene = BC.TCGA.list$genes[i]
+  test_TCGA <- cox_sdl_pair(sdl_pair = c(GENE_A = drug_target, GENE_B = gene),
+                            prob = metabric.list, 
+                            clinical = metabric.surv)
+  cox_results <- rbind(cox_results, test_TCGA)
+  print(i)}
+
+setwd("/gpfs/gsfs12/users/kimy35/SELECT/select_targeted/Target_training_BC-SELECT")
+saveRDS(cox_bc_results, file = "ERBB2_SDL_cox_covariates.rds")
+
