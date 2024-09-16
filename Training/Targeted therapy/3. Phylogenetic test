@@ -1,0 +1,43 @@
+# Function
+phylogenetic_profiles <- function(phylo_profiles = phylo_profiles,
+                                  feature_weight = feature_weight,
+                                  sl_pairs) {
+
+  sl_phylo <- cbind(  # get ids
+    match(sl_pairs[1], phylo_profiles$genes),
+    match(sl_pairs[2], phylo_profiles$genes))
+  
+  # get phylo profile for gene A and gene B
+  phylo_geneA <- phylo_profiles[sl_phylo[, 1], -(1:3)]
+  phylo_geneB <- phylo_profiles[sl_phylo[, 2], -(1:3)]
+  
+  # get the phylogenetic distance between gene A and B (Euclidean distance)
+  featureMat <- (phylo_geneA - phylo_geneB)^2
+  featureMat <- data.matrix(featureMat)
+  nmf_res <- featureMat %*% t(feature_weight)
+  nmf_res <- data.frame( t(sl_pairs), nmf_res[1], stringsAsFactors=FALSE)
+  colnames(nmf_res) <- c("GENE_A", "GENE_B", "phylogenetic_similarity")
+  nmf_res$rank_norm <- rank(
+    nmf_res$phylogenetic_similarity,
+    na.last = "keep" ) / length(nmf_res$phylogenetic_similarity)
+  
+  return(nmf_res) }
+
+# Fit
+phylo_profiles <- readRDS("/data/kimy35/SELECT/select_targeted/data/phylo.rds")
+feature_weight <- readRDS("/data/kimy35/SELECT/select_targeted/data/feature_weight.rds")
+
+phylo_result <- NULL 
+
+for(i in 1:length(phylo_profiles$genes)){
+  gene = as.character(phylo_profiles$genes)[i]
+  sl_pairs = c(drug_target, gene)
+  
+  phylogenetic_similarity <- phylogenetic_profiles(phylo = phylo_profiles,
+                                                   feature_weight = feature_weight,
+                                                   sl_pairs = sl_pairs)
+  phylo_result <-rbind(phylo_result, phylogenetic_similarity )
+  print(i)}
+
+setwd("/data/kimy35/SELECT/select_targeted/Target_training_BC-SELECT")
+saveRDS(phylo_result, file = "CYP19A1_phylo.rds") # save data
