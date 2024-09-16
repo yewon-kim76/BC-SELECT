@@ -1,0 +1,41 @@
+rm(list=ls())
+# Load libraries
+library(readxl); library(rmarkdown);library(ggplot2); library(tidyverse); library(dplyr); library(pROC); library(MKmisc)
+library(hrbrthemes); library(viridis); library(forcats); library(data.table); library(Rcpp); 
+library(survival); library(parallel); library(pracma); library(ROCR);
+
+Sys.setenv("PKG_CXXFLAGS"="-fopenmp")
+Sys.setenv("PKG_LIBS"="-fopenmp")
+setwd("/data/kimy35/SELECT/select_targeted/cox_sort_12_05/R_immuno_data")
+
+# Read data
+metabric.list <- readRDS("./metabric.list.rds") # METABRIC RNA-seq
+metabric.surv <- readRDS("./metabric.surv.rds") # METABRIC survival phenotypic data
+TCGA.list <- readRDS("./TCGA.list.rds") # breast cancer TCGA RNA-seq
+TCGA.surv <- readRDS("./TCGA.surv.rds") # breast cancer TCGA survival phynotypic data
+RNA_data <- readRDS("./RNA_data.rds") # Aggregated RNA-seq (breast cancer TCGA + METABRIC)
+
+nanostring=fread("/data/kimy35/SELECT/select_immuno/data/nanostring.txt")$"Gene Name" # 1154 immune related genes
+
+targets = c("PD1/PDL1") 
+target.genes = c("CD274","PDCD1") # both of them used in phylogenetic profiling
+targetIDs = match(targets, RNA_data$genes) 
+partnerIDs = match(nanostring, RNA_data$genes) # 58 immune related genes are not in the TCGA list
+partnerIDs = partnerIDs[!is.na(partnerIDs)] # remove genes not in TCGA gene list
+partner.genes = RNA_data$genes[partnerIDs] # gene name corresponding to partnerIDs
+sr = cbind(partnerIDs,targetIDs) 
+sr.genes = cbind(rep(partner.genes,2), rep(target.genes, each=1096))
+
+# Tumor screen (hypergeometric): combined expression data (breast cancer TCGA + METABRIC)
+sr.curr = sr 
+sourceCpp("/data/kimy35/SELECT/select_immuno/R/HyperGeometricTest.pair.cpp",rebuild=T)
+pval.mRNA1 = hypergeometricTestPair(scnaq= RNA_data$mRNAq2, pairs=sr.curr) 
+pval.mRNA.up = hypergeometricTestPair(scnaq= RNA_data$mRNAq2, pairs=sr.curr, lowerTail=0)
+pval.mRNA = cbind(sr.curr[,1:2], pval.mRNA1, pval.mRNA.up)
+colnames(pval.mRNA)[c(3:11)] <- c("pval.mRNA1_1","pval.mRNA1_2","pval.mRNA1_3","pval.mRNA1_4",
+                                  "pval.mRNA1_5","pval.mRNA1_6","pval.mRNA1_7","pval.mRNA1_8",
+                                  "pval.mRNA1_9")
+colnames(pval.mRNA)[c(12:20)] <- c("pval.mRAN.up_1","pval.mRAN.up_2","pval.mRAN.up_3",
+                                   "pval.mRAN.up_4",  "pval.mRAN.up_5","pval.mRAN.up_6","pval.mRAN.up_7",
+                                   "pval.mRAN.up_8","pval.mRAN.up_9")
+
