@@ -1,0 +1,16 @@
+# Phylogenetic screen
+load("./phylogenetic.profile.RData")
+load("./feature.weight.RData")
+
+sr.genes = data.table(rescuer = sr.genes[,1], vulnerable = sr.genes[,2])
+phylogenetic.distance.score = phylo.profile(sr.genes)
+phylogenetic.distance.score = cbind(phylogenetic.distance.score[1:1096], 
+                                    phylogenetic.distance.score[1097:2192])
+
+# save all trained information
+cox_all <- cbind(TCGA_clinp, metabric_clinp)
+sr.tot=cbind(sr[,c(2,1)],pval.mRNA[,c(4,5,12)], cox_all, phylogenetic.distance.score) 
+colnames(sr.tot)[10] <- "phylogenetic.distance.score_CD274"
+colnames(sr.tot)[11] <- "phylogenetic.distance.score_PDCD1"
+
+#saveRDS(sr.tot, file = "SR_DD.rds")
