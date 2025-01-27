@@ -27,6 +27,9 @@ SCANB.surv <- readRDS("./SCANB.surv.rds"); SCANB.surv <- SCANB.surv[,-c(3)]
 SCANB.surv$age <- (SCANB.surv$age - mean(SCANB.surv$age) ) /sd(SCANB.surv$age) # Same normalized scale
 
 RNA_data <- readRDS("./RNA_data3.rds") # Combined patients gene expression data (breast cancer TCGA, METABRIC, SCAN-B)
+# RNA_data is a type of dataset within the "name of data.list" category (e.g., TCGA.list, METABRIC.list, and SCAN-B.list), 
+# encompassing breast cancer datasets such as TCGA, METABRIC, and SCAN-B.
+
 nanostring=fread("/data/kimy35/SELECT/select_immuno/data/nanostring.txt")$"Gene Name" # 1154 immune related NanoString genes
 
 targets = c("PD1/PDL1") # anti-PD1/PDL1 agents
@@ -52,3 +55,7 @@ colnames(pval.mRNA)[c(3:11)] <- c("pval.mRNA1_1","pval.mRNA1_2","pval.mRNA1_3","
 colnames(pval.mRNA)[c(12:20)] <- c("pval.mRAN.up_1","pval.mRAN.up_2","pval.mRAN.up_3",
                                    "pval.mRAN.up_4",  "pval.mRAN.up_5","pval.mRAN.up_6","pval.mRAN.up_7",
                                    "pval.mRAN.up_8","pval.mRAN.up_9")
+
+rm(pval.mRNA1, pval.mRNA.up)
+
+
