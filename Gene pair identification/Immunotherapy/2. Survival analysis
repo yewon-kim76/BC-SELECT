@@ -1,4 +1,4 @@
-# Tumor screen (cox regression): for each dataset (breast cancer TCGA, METABRIC)
+# Tumor screen (cox regression): for each dataset (breast cancer TCGA, METABRIC, SCAN-B)
 
 coxph.run = function(formula.list, data1){
   fmla <- as.formula(paste(" Surv(time,status) ~ ", paste(formula.list, collapse= "+")))
