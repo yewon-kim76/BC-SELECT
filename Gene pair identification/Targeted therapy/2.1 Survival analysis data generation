@@ -203,6 +203,3 @@ SCANB.list = list(genes = TCGA_genes,
 
 saveRDS(SCANB.list, "SCANB.list.rds")
 
-
-
-
