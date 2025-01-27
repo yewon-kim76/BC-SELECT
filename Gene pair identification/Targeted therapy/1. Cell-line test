@@ -1,6 +1,7 @@
 ## A large-scale data screen using tumor cell-line and pharmacological data
 ## along with the Wilcoxon rank-sum test, to identify significant genetic interaction pairs A and B
 ## (drug target gene(s) A(s) and its partner genes Bs).
+## For the targeted therapy module, we focused on SL/SDL gene pairs.
 ## Gene expression data is divided into tertiles (so called q2 matrix), with the top tertile representing upregulated genes and 
 ## the bottom tertile representing downregulated genes, based on relative expression levels.
 
