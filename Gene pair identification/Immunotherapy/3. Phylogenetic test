@@ -1,16 +1,21 @@
-# Phylogenetic screen
-load("./phylogenetic.profile.RData")
-load("./feature.weight.RData")
+## Phylogenetic screen.
+## We calculate the phylogenetic similarity score between each candidate partner gene (Bs) and both PDCD1 and CD274. 
+## The final phylogenetic score for a candidate interacting gene with PDCD1/CD274 is determined as the smaller of the two similarity scores. 
+
+load("./phylogenetic.profile.RData") # load phylogenetic similarity scores 
+load("./feature.weight.RData") # load weights similar to the targeted therapy
 
 sr.genes = data.table(rescuer = sr.genes[,1], vulnerable = sr.genes[,2])
 phylogenetic.distance.score = phylo.profile(sr.genes)
 phylogenetic.distance.score = cbind(phylogenetic.distance.score[1:1096], 
                                     phylogenetic.distance.score[1097:2192])
 
-# save all trained information
-cox_all <- cbind(TCGA_clinp, metabric_clinp)
+# All three screen results were saved.
+cox_all <- cbind(TCGA_clinp, metabric_clinp, SCANB_clinp)
 sr.tot=cbind(sr[,c(2,1)],pval.mRNA[,c(4,5,12)], cox_all, phylogenetic.distance.score) 
-colnames(sr.tot)[10] <- "phylogenetic.distance.score_CD274"
-colnames(sr.tot)[11] <- "phylogenetic.distance.score_PDCD1"
+colnames(sr.tot)[12] <- "phylogenetic.distance.score_CD274"
+colnames(sr.tot)[13] <- "phylogenetic.distance.score_PDCD1"
 
-#saveRDS(sr.tot, file = "SR_DD.rds")
+saveRDS(sr.tot, file = "SR_training_scanb.rds")
+
+## For the immunotherapy module, we prioritize the candidate SR partner genes (Bs) in ascending order of their phylogenetic scores.
