@@ -1,1 +1,27 @@
+## After identifying candidate partner genes (Bs) for each drug target (gene A) that pass through three sequential screening steps, 
+## we fine-tune the hyperparameters using three breast cancer tuning cohorts through gradient testing.
+## Each treatment is used to optimize the algorithm settings HER2-directed drug, PARP inhibitor, and immunotherapy.
+## Once the algorithm setting is established, we apply the setting to unseen breast cancer trials 
+## (Trastuzumab, PARP inhibitors, and anti-PD1/PDL1 immunotherapy) to avoid overfitting problems.
 
+## For the final patient's scoring metric, we introduced two NanoString gene lists 
+## ("bc_gene_list" for targeted therapy and "nanostring" for immunotherapy). 
+## We also assess the relative expression levels of these genes by tertile (levels 0, 1, and 2).
+
+# Tuning data: GSE66399 (Trastuzumab, drug target = ERBB2)
+load("/data/kimy35/BC-SELECT1.5/dat.GSE66399_trastuzumab.RData") # dat
+sub_gene <- intersect(tcga_list, dat$genes) 
+GSE66399_3 <- dat$mRNA[dat$genes %in% sub_gene,] ; rm(sub_gene)
+GSE66399_4 <- dat$mRNA[dat$genes %in% bc_gene_list,] ; dim(GSE66399_3); dim(GSE66399_4)
+
+# Tuning data: GSE160568 (Talazoparib, drug target = PARP1, PARP2)
+GSE160568 <- readRDS("/data/kimy35/BC-SELECT1.5/GSE160568.rds"); row <- rownames(GSE160568$data)
+GSE160568$data <- data.frame(lapply(GSE160568$data,as.numeric)); rownames(GSE160568$data) <-row
+sub_gene <- intersect(tcga_list, rownames(GSE160568$data)) 
+GSE160568_2 <- GSE160568$data[rownames(GSE160568$data) %in% sub_gene,] ; rm(sub_gene) 
+GSE160568_3 <- GSE160568$data[rownames(GSE160568$data) %in% bc_gene_list,] ; dim(GSE160568_2); dim(GSE160568_3)
+
+
+# Tuning data: NCT02489448 (Durvalumab, drug target = PDCD1/CD274)
+YALE <- readRDS("/data/kimy35/BC-SELECT1.5/immuno/YALE.rds") # Durvalumab, YALE
+YALE$mRNA.rank2 <- bin_matrix(YALE$mRNA, direction = "row", bin=TRUE, split = 3)
