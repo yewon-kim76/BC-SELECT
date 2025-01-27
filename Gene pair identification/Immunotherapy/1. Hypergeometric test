@@ -4,6 +4,7 @@
 ## We focused on anti-PD1/PDL1 agents, as other classes of immunotherapy are not yet approved in breast cancer 
 ## and did not have corresponding clinical trial data available.
 ## We consider only SR interaction pairs for immunotherapy.
+## The drug target (PDCD1/CD274, referred to as "A" in the gene pair) is defined as the product of the expression levels of PDCD1 and CD274.
 
 rm(list=ls())
 # Load libraries
