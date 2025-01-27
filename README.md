@@ -1,16 +1,16 @@
-BC-SELECT is a computational tool adapted from SELECT (Cell, 2021) to predict drug responses in early-stage breast cancer patients. 
-It involves two main steps: (1) a 'training' step that constructs a library of clinically relevant candidate SL/SDL/SR partner genes for a given drug target, 
-and (2) a 'testing/validation' step that calculates the likelihood of drug response for patients in unseen studies based on the relative expression of these candidate partner genes.
+BC-SELECT is a computational tool adapted from SELECT (Cell, 2021) to predict drug responses in early-stage breast cancer patients using transcriptome data. 
 
-Training step: for targeted therapy, we used three filters to identify SL/SDL candidate partner genes. 
-A gene must pass the following sequentially: 1) cell line test, 2) survival test, and 3) evolutionary analysis. 
-For the immunotherapy module, we replaced the cell line test with a hypergeometric screen to obtain a sufficient number of immune-related SR candidate partner genes.
+It involves two main steps: (1) a 'gene pair identification' step and (2) 'fine-tuning hyperparameters and validation performance'. 
+The first part leverages large-scale cell-line datasets and breast cancer patient cohorts, including Breast Cancer TCGA, METABRIC, and SCAN-B, to identify 
+clinically relevant genetic interactions between gene pairs A and B. Here, gene A represents the target of a given therapy (e.g., targeted therapy or immunotherapy), 
+while multiple partner genes (Bs) are identified based on their interactions with A. Specifically, drug efficacy is explained through mechanisms of genetic interaction. 
+To explore this, we constructed a comprehensive library of clinically relevant candidate partner genes (Bs) involved in synthetic lethality (SL), synthetic dosage lethality (SDL), 
+or synthetic rescue (SR) interactions with a given drug target (A). 
 
-The testing datasets are independent of the training datasets (Breast Cancer TCGA and METABRIC), and the testing datasets must include drug responses (Pathologic Complete Response, pCR) and gene expression information.
+The second part focuses on fine-tuning hyperparameters using the results from the identified gene pairs in step (1) 
+and three distinct breast cancer tuning cohorts. Once the optimal settings are established, we proceed to the model performance validation phase with unseen evaluation breast cancer cohorts. 
+In this phase, the expression levels of partner B genes are used to generate a patient's predicted response score (likelihood) to treatments targeting gene A(s).
 
-
-Gene expression is assessed only within datasets (not across datasets, to minimize batch effect confounding) and divided into tertiles, 
-with upregulated genes in the top tertile and downregulated genes in the bottom tertile, based on relative expression levels across patients. 
-Using the bin_matrix function, we categorize these into tertiles (q2 = 0, 1, and 2) and measure relative gene expression levels across patients.
-
+To assess drug efficacy for each patient, we calculate the predicted response score based on the expression levels of the identified gene pairs (A(s) and Bs) and 
+the curated genes' expression obtained through NanoString.
 
