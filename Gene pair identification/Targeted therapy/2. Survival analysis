@@ -1,4 +1,4 @@
-## Survival analusis.
+## Survival analysis.
 ## Cox proportional hazards models using the gene expressions of SL/SDL gene pairs from patients with breast cancer 
 ## (TCGA, METABRIC, SCAN-B) to identify genetic interactions associated with patient survival. 
 
