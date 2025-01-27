@@ -1,38 +1,48 @@
 ## For the immunotherapy module, for step (1), the cell-line and drug screen filter did not identify enough immune-related 
 ## candidate paired genes. As such, we substitute a hypergeometric test only for this module using the breast TCGA, METABRIC 
 ## and SCAN-B datasets.
+## We focused on anti-PD1/PDL1 agents, as other classes of immunotherapy are not yet approved in breast cancer 
+## and did not have corresponding clinical trial data available.
+## We consider only SR interaction pairs for immunotherapy.
 
 rm(list=ls())
 # Load libraries
-library(readxl); library(rmarkdown);library(ggplot2); library(tidyverse); library(dplyr); library(pROC); library(MKmisc)
+library(readxl); library(ggplot2); library(tidyverse); library(dplyr); library(pROC); library(MKmisc)
 library(hrbrthemes); library(viridis); library(forcats); library(data.table); library(Rcpp); 
 library(survival); library(parallel); library(pracma); library(ROCR);
 
+set.seed(12345)
 Sys.setenv("PKG_CXXFLAGS"="-fopenmp")
 Sys.setenv("PKG_LIBS"="-fopenmp")
-setwd("/data/kimy35/SELECT/select_targeted/cox_sort_12_05/R_immuno_data")
+setwd("/data/kimy35/BC-SELECT1.5/immuno")
+source("./source4_scanb.R")
 
 # Read data
-metabric.list <- readRDS("./metabric.list.rds") # METABRIC RNA-seq
-metabric.surv <- readRDS("./metabric.surv.rds") # METABRIC survival phenotypic data
-TCGA.list <- readRDS("./TCGA.list.rds") # breast cancer TCGA RNA-seq
-TCGA.surv <- readRDS("./TCGA.surv.rds") # breast cancer TCGA survival phynotypic data
-RNA_data <- readRDS("./RNA_data.rds") # Aggregated RNA-seq (breast cancer TCGA + METABRIC)
+metabric.list <- readRDS("./metabric.list.rds")
+metabric.surv <- readRDS("./metabric.surv.rds"); metabric.surv <- metabric.surv[,-c(5)]
+TCGA.list <- readRDS("./TCGA.list.rds")
+TCGA.surv <- readRDS("./TCGA.surv.rds"); TCGA.surv <- TCGA.surv[,-c(7)]
+SCANB.list <- readRDS("./SCANB.list2.rds") 
+SCANB.surv <- readRDS("./SCANB.surv.rds"); SCANB.surv <- SCANB.surv[,-c(3)]
+SCANB.surv$age <- (SCANB.surv$age - mean(SCANB.surv$age) ) /sd(SCANB.surv$age) # Same normalized scale
 
-nanostring=fread("/data/kimy35/SELECT/select_immuno/data/nanostring.txt")$"Gene Name" # 1154 immune related genes
+RNA_data <- readRDS("./RNA_data3.rds") # Combined patients gene expression data (breast cancer TCGA, METABRIC, SCAN-B)
+nanostring=fread("/data/kimy35/SELECT/select_immuno/data/nanostring.txt")$"Gene Name" # 1154 immune related NanoString genes
 
-targets = c("PD1/PDL1") 
-target.genes = c("CD274","PDCD1") # both of them used in phylogenetic profiling
+targets = c("PD1/PDL1") # anti-PD1/PDL1 agents
+target.genes = c("CD274","PDCD1") # Both of them used in phylogenetic profiling
 targetIDs = match(targets, RNA_data$genes) 
 partnerIDs = match(nanostring, RNA_data$genes) # 58 immune related genes are not in the TCGA list
-partnerIDs = partnerIDs[!is.na(partnerIDs)] # remove genes not in TCGA gene list
-partner.genes = RNA_data$genes[partnerIDs] # gene name corresponding to partnerIDs
+partnerIDs = partnerIDs[!is.na(partnerIDs)] # Remove genes not in TCGA gene list
+partner.genes = RNA_data$genes[partnerIDs] # Gene name corresponding to partnerIDs
 sr = cbind(partnerIDs,targetIDs) 
-sr.genes = cbind(rep(partner.genes,2), rep(target.genes, each=1096))
+sr.genes = cbind(rep(partner.genes,2), rep(target.genes, each=1096)) # Target gene A (PDCD1, CD274) and possible candidate partner gene Bs.
 
-# Tumor screen (hypergeometric): combined expression data (breast cancer TCGA + METABRIC)
+# Tumor screen (hypergeometric): combined gene expression data (breast cancer TCGA, METABRIC, SCAN-B)
 sr.curr = sr 
-sourceCpp("/data/kimy35/SELECT/select_immuno/R/HyperGeometricTest.pair.cpp",rebuild=T)
+sourceCpp("/data/kimy35/SELECT/select_immuno/R/HyperGeometricTest.pair.cpp",rebuild=T) 
+# Use the same count function as in SELECT; however, only gene expression data is utilized.
+
 pval.mRNA1 = hypergeometricTestPair(scnaq= RNA_data$mRNAq2, pairs=sr.curr) 
 pval.mRNA.up = hypergeometricTestPair(scnaq= RNA_data$mRNAq2, pairs=sr.curr, lowerTail=0)
 pval.mRNA = cbind(sr.curr[,1:2], pval.mRNA1, pval.mRNA.up)
