@@ -1,1 +1,208 @@
+# Related functions----------------------------------------------------------------------
+
+rank_normalization <- function(x) {
+  x_back <- x # This just makes sure the NAs are kept in place
+  x <- x[!is.na(x)]
+  x <- rank(x, ties.method = "average") / length(x)
+  x_back[!is.na(x_back)] <- x
+  return(x_back) }
+
+bin_matrix <- function(x, direction = "row", bin = TRUE, split = 3) { 
+  if (direction == "column") {
+    rank_norm <- apply(x, 2, rank_normalization) 
+    if (split == 2) { q2 <- 1 * (rank_norm >= 1 / 2)}
+    if (split == 3) { q2 <- 1 * (rank_norm > 1 / 3) + 1 * (rank_norm > 2 / 3) } }
+  if (direction == "row") {
+    rank_norm <- t(apply(x, 1, rank_normalization))
+    if (split == 2) {q2 <- 1 * (rank_norm >= 1 / 2) }
+    if (split == 3) {q2 <- 1 * (rank_norm > 1 / 3) + 1 * (rank_norm > 2 / 3)} } 
+  if (bin == TRUE) { return(q2)} # Generate a q2 matrix based on tertiles (0, 1, and 2).
+  if (bin == FALSE) { return(rank_norm) }  }
+
+qnorm_normalization <- function(x) {
+  # Saving x_back allows us to keep NAs that rank() removes.
+  x_back <- x
+  x <- rank(x, ties.method = "average", na.last = NA)
+  x <- qnorm(x / (length(x) + 1))
+  x_back[!is.na(x_back)] <- x
+  return(x_back)}
+
+
+## Breast cancer patients data: TCGA
+load("/data/kimy35/prob.TCGA.ICI.RData"); TCGA.ICI <- prob; rm(prob) # Pan-cancer TCGA dataset
+
+# Cox regression information for TCGA: sex, age, race, stage
+TCGA.ICI$age <- ifelse(is.na(TCGA.ICI$age), mean(TCGA.ICI$age,na.rm=T), TCGA.ICI$age) # Missing value
+TCGA.ICI$race <- ifelse(is.na(TCGA.ICI$race),"unknown", TCGA.ICI$race) # Missing value
+TCGA.ICI$stage <- recode(TCGA.ICI$stage, "I/II NOS" = "unknown", "IS" = "unknown", "Stage 0" = "unknown",
+                         "Stage IA" = "Stage I", "Stage IB" = "Stage I",
+                         "Stage IIA" = "Stage II", "Stage IIB" = "Stage II", "Stage IIC" = "Stage II",
+                         "Stage IIIA" = "Stage III", "Stage IIIB" = "Stage III", "Stage IIIC" = "Stage III",
+                         "Stage IVA" = "Stage IV", "Stage IVB" = "Stage IV", 
+                         "Stage IVC" = "Stage IV", "Stage X" = "unknown")
+TCGA.ICI$stage = ifelse(is.na(TCGA.ICI$stage), "unknown", TCGA.ICI$stage) # Missing value
+
+# surv: clinically important phenotype data (only for breast cancer patients)
+TCGA.surv <- data.frame(age = qnorm.array(TCGA.ICI$age[404:1478]), 
+                        sex = TCGA.ICI$sex[404:1478], 
+                        race = TCGA.ICI$race[404:1478], 
+                        stage = TCGA.ICI$stage[404:1478], 
+                        time = TCGA.ICI$surv.dt$time[404:1478],
+                        status = TCGA.ICI$surv.dt$status[404:1478])
+TCGA.surv$status = ifelse(TCGA.surv$status==1,0,1) # opposite survival status
+
+# list: gene expression dataset 
+mRNA.norm <- TCGA.ICI$mRNA.norm[1:19001, 404:1478] # Normalized RNA-seq
+rownames(mRNA.norm) <- TCGA.ICI$genes[1:19001]; colnames(mRNA.norm) <- TCGA.ICI$samples[404:1478] 
+
+mrna_q2 <- TCGA.ICI$mRNAq2[1:19001, 404:1478] # q2 matrix based on tertiles (0, 1, and 2)
+rownames(mrna_q2) <- TCGA.ICI$genes[1:19001]; colnames(mrna_q2) <- TCGA.ICI$samples[404:1478] 
+
+TCGA.list = list(genes = TCGA.ICI$genes[1:19001], # gene list (Possible candidates for partner gene Bs.)
+                 mrna_qnorm = mRNA.norm ,
+                 mrna_q2 = mrna_q2) 
+
+rm(TCGA.ICI)
+saveRDS(TCGA.surv, "TCGA.surv.rds"); saveRDS(TCGA.surv, "TCGA.surv.rds")
+
+
+## Breast cancer patients data: METABRIC
+load("/data/kimy35/prob.curtis.extended.RData"); metabric <- prob; rm(prob)  # METABRIC dataset
+
+# cox regression information for METABRIC: age, stage 
+metabric$age = ifelse(is.na(metabric$age), mean(metabric$age,na.rm=T), metabric$age) # Missing value
+metabric$stage = recode(metabric$stage, "0" = "unknown", "1" = "Stage I", "2" = "Stage II",
+                        "3" = "Stage III", "4" = "Stage IV", "null" = "unknown" )
+
+# surv: clinically important phenotype data 
+metabric.surv = data.frame(time = metabric$surv.dt$time, status = metabric$surv.dt$status,
+                           age = qnorm.array(metabric$age), 
+                           stage = metabric$stage)
+
+saveRDS(metabric.surv, "metabric.surv.rds")
+
+# list: gene expression dataset 
+mRNA.norm <- metabric$mRNA.norm
+rownames(mRNA.norm) <- metabric$genes; colnames(mRNA.norm) <- metabric$samples
+mrna_q2 <- metabric$mRNAq2
+rownames(mrna_q2) <- metabric$genes; colnames(mrna_q2) <- metabric$samples
+metabric.list = list(genes = metabric$genes, 
+                     mrna_qnorm = mRNA.norm, 
+                     mrna_q2 = mrna_q2) 
+rm(metabric)
+
+saveRDS(metabric.list, "metabric.list.rds")
+
+
+## Breast cancer patients data: SCAN-B (GSE96058)
+library(GEOquery); library(readxl); library(stringr); library(dplyr); library(readr); library(stringr)
+
+# 3273: Validation cohort
+gse=getGEO(filename="./SCAN_B/GSE96058-GPL11154_series_matrix.txt")
+GSE96058_gene_expression <- read.csv("./SCAN_B/GSE96058_gene_expression_3273_samples_and_136_replicates_transformed.csv")
+# The expression data was log2-transformed. Therefore, the original gene expression scale can be recovered by applying 
+# the inverse transformation.
+
+colnames(GSE96058_gene_expression)[1] <- "GENE"; rownames(GSE96058_gene_expression) <- GSE96058_gene_expression$GENE
+GSE96058_gene_expression <- GSE96058_gene_expression[,-1] #Update format
+colnames(GSE96058_gene_expression)[3272:3275]
+GSE96058_gene_expression <- GSE96058_gene_expression[-c(3274:3409)] # Remove technical replicates
+
+GSE96058_updated <- GSE96058_gene_expression # Reverse the log2() transformation.
+for (i in 1:3273){ GSE96058_updated[,i] <- (2^{GSE96058_gene_expression[,i]})-0.1 ; print(i)}
+any(GSE96058_updated < 0); sum(which(GSE96058_updated < 0)) # Positive normalized RNA-seq 
+
+# Update patient ID / clinicially important phenotypes
+F_ID <- gse@phenoData@data[["title"]]
+age <- gse@phenoData@data[["characteristics_ch1.2"]]
+lymph_group <- gse@phenoData@data[["characteristics_ch1.4"]] # Required for tumor stage
+size <-  gse@phenoData@data[["characteristics_ch1.3"]] # Required for tumor stage
+os_days <- gse@phenoData@data[["characteristics_ch1.21"]] 
+os_event <- gse@phenoData@data[["characteristics_ch1.22"]]
+
+full_ID <- data.frame(F_ID, age, subtype,lymph_group,size, os_days, os_event)
+sub_id <- full_ID$F_ID %in% colnames(GSE96058_updated); sum(sub_id) # 2969
+full_ID <- full_ID[which(full_ID$F_ID %in% colnames(GSE96058_updated)),]
+
+GSE96058_updated <- GSE96058_updated[which(colnames(GSE96058_updated) %in% full_ID$F_ID)] 
+# Select patients who have both gene expression and phenotype data available for survival analysis.
+
+# surv: clinically important phenotype data 
+pheno <- full_ID %>%
+  mutate(age = str_remove_all(age, "age at diagnosis: ")) %>%
+  mutate(subtype = str_remove_all(subtype, "pam50 subtype: ")) %>%
+  mutate(lymph_group = str_remove_all(lymph_group, "lymph node group: ")) %>%
+  mutate(size = str_remove_all(size, "tumor size: ")) %>%
+  mutate(os_days = str_remove_all(os_days, "overall survival days: ")) %>%
+  mutate(os_event = str_remove_all(os_event, "overall survival event: "))
+
+pheno$size <- as.numeric(pheno$size); summary(pheno$size)
+
+# Define tumor stage based on tumor size and lymph node involvement.
+stage <-pheno %>% 
+  mutate(stage = case_when(size <= 20 & lymph_group == "NodeNegative" ~ "Stage I",
+                           size <= 20 & lymph_group == "SubMicroMet" ~ "Stage I",
+                           
+                           size <= 20 & lymph_group == "1to3" ~ "Stage II",
+                           size > 20 & size <= 50 & lymph_group == "NodeNegative" ~ "Stage II",
+                           size > 20 & size <= 50 & lymph_group ==  "1to3" ~ "Stage II",
+                           size > 50 & lymph_group == "NodeNegative" ~ "Stage II",
+                           
+                           size <= 20 & lymph_group ==  "4toX" ~ "Stage III",
+                           size > 20 & size <=50  & lymph_group ==  "4toX" ~ "Stage III",
+                           size > 50 & lymph_group ==  "4toX" ~ "Stage III",
+                           size > 50 & lymph_group ==  "1to3"  ~ "Stage III"))
+
+pheno$stage <- stage$stage
+pheno$age <- as.numeric(pheno$age)
+pheno$stage = ifelse(is.na(pheno$stage), "unknown", pheno$stage) # Missing value
+pheno$time <- as.numeric(pheno$os_days)
+pheno$status <- as.numeric(pheno$os_event)
+pheno <- pheno[,-c(1,3,4,5,6,7)]
+
+setwd("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/Training_dataset")
+saveRDS(pheno, file = "SCANB.surv.rds") 
+
+# list: gene expression dataset (It should follow the same format as TCGA and METABRIC).
+mrna_q2 <- bin_matrix(GSE96058_updated, direction = "row", bin = TRUE, split = 3) # Generate q2 matrix based on tertile (0,1, and 2)
+mrna.norm <-  apply(GSE96058_updated, 1 ,  qnorm_normalization) 
+mrna.norm <- t(mrna.norm)
+
+TCGA_genes <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/TCGA_genes.rds")
+length(intersect(rownames(mrna_q2), TCGA_genes))
+
+
+# Among the genes listed in the GSE96058 gene expression dataset, we filtered only those that are also present in the TCGA dataset. 
+# The screened genes may serve as potential candidates for partner gene Bs.
+
+tcga_mrna_q2 <- data.frame(matrix(NA, nrow = 19001, ncol = 2969))
+colnames(tcga_mrna_q2) <- colnames(mrna_q2)
+
+for(i in 1: 19001){
+  gg <- TCGA_genes[i]
+  ifelse(gg %in% rownames(mrna_q2), tcga_mrna_q2[i,] <- mrna_q2[grep(gg, rownames(mrna_q2)),] ,
+         tcga_mrna_q2[i,] <- rep(NA, 2969) )
+  print(i) }
+
+tcga_mrna.norm <- data.frame(matrix(NA, nrow = 19001, ncol = 2969))
+colnames(tcga_mrna.norm) <- colnames(mrna.norm)
+
+for(i in 1: 19001){
+  gg <- TCGA_genes[i]
+  ifelse(gg %in% rownames(mrna.norm), 
+         tcga_mrna.norm[i,] <- mrna.norm[grep(gg, rownames(mrna_q2)),],
+         tcga_mrna.norm[i,] <- rep(NA, 2969) )
+  print(i) }
+
+tcga_mrna_q2 <- as.matrix(tcga_mrna_q2); rownames(tcga_mrna_q2) <- paste(TCGA_genes[1:19001]); 
+tcga_mrna.norm <- as.matrix(tcga_mrna.norm); rownames(tcga_mrna.norm) <- paste(TCGA_genes[1:19001]);
+
+SCANB.list = list(genes = TCGA_genes,
+                  mrna_qnorm = tcga_mrna.norm , 
+                  mrna_q2 = tcga_mrna_q2) 
+
+saveRDS(SCANB.list, "SCANB.list.rds")
+
+
+
 
