@@ -14,3 +14,7 @@ In this phase, the expression levels of partner B genes are used to generate a p
 To assess drug efficacy for each patient, we calculate the predicted response score based on the expression levels of the identified gene pairs (A(s) and Bs) and 
 the curated genes' expression obtained through NanoString.
 
+We use separate modules for targeted therapies and immunotherapies, so the "gene pair identification" and "performance validation" folders are organized accordingly, 
+with one set for targeted therapy and the other for immunotherapy.
+
+
