@@ -1,1 +1,159 @@
+## We applied BC-SELECT to seven independent breast cancer trials focusing on targeted therapies. 
+## These trials include four involving trastuzumab and three evaluating PARP inhibitors (veliparib or olaparib). 
+## Drug response prediction accuracy was assessed using odds ratios, ROC-AUCs, precision-recall curves, and empirical p-values.
+## For the targeted therapy module, we conducted SL and SDL analyses and reported the results with better performance
+
+rm(list=ls())
+set.seed(12345) # Simulation for empirical p-values
+setwd("/data/kimy35/BC-SELECT1.5")
+source("./Ranking_Pairs5.R") # Source functions
+
+nn=55 # the number of SL/SDL partner genes used in the analysis
+tcga_list <- readRDS(file = "./TCGA_genes.rds"); tcga_list <- tcga_list[1:19001] # Genes included in TCGA
+bc_gene_list <- read.delim("./bc_gene_list.txt", stringsAsFactors=TRUE); bc_gene_list <- as.character(bc_gene_list$Gene.Symbol)
+# Both the identified partner genes and the genes included in NanoString were used to evaluate a patient's drug efficacy.
+
+##
+## Drug: TRASTUZUMAB, Target gene: ERBB2
+##
+candidates_sl <- mono_target2(drugs = "TRASTUZUMAB", interaction = "SL", FDR = 0.2, method = "min")
+candidates_sdl <- mono_target2(drugs = "TRASTUZUMAB", interaction = "SDL", FDR = 0.2, method = "min")
+
+# Evaluation data: GSE50948
+load("./dat.GSE50948.RData"); GSE50948 <- dat
+sub_gene <- intersect(tcga_list, GSE50948$genes) 
+GSE50948_3 <- GSE50948$mRNA[GSE50948$genes %in% sub_gene,] ; rm(sub_gene)
+GSE50948_4 <- GSE50948$mRNA[GSE50948$genes %in% bc_gene_list,] ; rm(dat); dim(GSE50948_3); dim(GSE50948_4)
+
+# SL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sl$GENE_B), rownames(GSE50948_3))[1:nn]; print(pairs)
+SL_AUC2(data1 = GSE50948_3, data2 = GSE50948_4, drugs = "TRASTUZUMAB", drug_response = GSE50948$outcome, 
+         pair = pairs)
+
+# SDL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sdl$GENE_B), rownames(GSE50948_3))[1:nn]; print(pairs)
+SDL_AUC2(data1 = GSE50948_3, data2 = GSE50948_4, drugs = "TRASTUZUMAB", drug_response = GSE50948$outcome, 
+         pair = pairs)
+
+rm(GSE50948, GSE50948_3, GSE50948_4, pairs)
+
+# Evaluation data: GSE37946
+load("./dat.GSE37946.RData"); GSE37946 <- dat
+sub_gene <- intersect(tcga_list, GSE37946$genes) 
+GSE37946_3 <- GSE37946$mRNA[GSE37946$genes %in% sub_gene,] ; rm(sub_gene) 
+GSE37946_4 <- GSE37946$mRNA[GSE37946$genes %in% bc_gene_list,] ; rm(dat); dim(GSE37946_3); dim(GSE37946_4)
+
+# SL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sl$GENE_B), rownames(GSE37946_3))[1:nn]; print(pairs)
+SL_AUC2(data1 = GSE37946_3, data2 = GSE37946_4, drugs = "TRASTUZUMAB", drug_response = GSE37946$outcome, 
+        pair = pairs)
+
+# SDL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sdl$GENE_B), rownames(GSE37946_3))[1:nn]; print(pairs)
+SDL_AUC2(data1 = GSE37946_3, data2 = GSE37946_4, drugs = "TRASTUZUMAB", drug_response = GSE37946$outcome, 
+         pair = pairs)
+
+rm(GSE37946, GSE37946_3, GSE37946_4, pairs)
+
+# Evaluation data: GSE42822
+load("./dat.GSE42822.RData"); GSE42822 <- dat
+sub_gene <- intersect(tcga_list, GSE42822$genes) 
+GSE42822_3 <- GSE42822$mRNA[GSE42822$genes %in% sub_gene,] ; rm(sub_gene) ; which(is.na(GSE42822_3 )) # no NA
+GSE42822_4 <- GSE42822$mRNA[GSE42822$genes %in% bc_gene_list,] ; rm(dat); dim(GSE42822_3); dim(GSE42822_4)
+
+# SL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sl$GENE_B), rownames(GSE42822_3))[1:nn]; print(pairs)
+SL_AUC2(data1 = GSE42822_3, data2 = GSE42822_4, drugs = "TRASTUZUMAB", drug_response = GSE42822$outcome, 
+        pair = pairs)
+
+# SDL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sdl$GENE_B), rownames(GSE42822_3))[1:nn]; print(pairs)
+SDL_AUC2(data1 = GSE42822_3, data2 = GSE42822_4, drugs = "TRASTUZUMAB", drug_response = GSE42822$outcome, 
+         pair = pairs)
+
+rm(GSE42822, GSE42822_3, GSE42822_4, pairs)
+
+# Evaluation data: TRANSNEO
+load("./dat.transneo.RData"); transneo <- dat
+sub_gene <- intersect(tcga_list, transneo$genes)
+transneo_3 <- transneo$mRNA[transneo$genes %in% sub_gene,] ; rm(sub_gene) 
+transneo_4 <- transneo$mRNA[transneo$genes %in% bc_gene_list,] ; rm(dat); dim(transneo_3); dim(transneo_4)
+
+# SL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sl$GENE_B), rownames(transneo_3 ))[1:nn]; print(pairs)
+SL_AUC2(data1 = transneo_3, data2 = transneo_4, drugs = "TRASTUZUMAB", drug_response = transneo$outcome, 
+        pair = pairs)
+
+# SDL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sdl$GENE_B), rownames(transneo_3 ))[1:nn]; print(pairs)
+SDL_AUC2(data1 = transneo_3, data2 = transneo_4, drugs = "TRASTUZUMAB", drug_response = transneo$outcome, 
+         pair = pairs)
+
+rm(transneo, transneo_3, transneo_4, pairs)
+
+##
+## Drug: VELIPARIB, Target genes: PARP1, PARP2
+##
+candidates_sl <- multiple_target2(drugs = "VELIPARIB", interaction = "SL", FDR = 0.2, method = "min")
+candidates_sdl <- multiple_target2(drugs = "VELIPARIB", interaction = "SDL", FDR = 0.2, method = "min")
+
+# Evaluation data: ISPY2-GSE194040
+load("./GSE194040_ISPY2.RData")
+sub_gene <- intersect(tcga_list, rownames(GSE194040_ISPY2$mRNA)) 
+GSE194040_2 <- GSE194040_ISPY2$mRNA[rownames(GSE194040_ISPY2$mRNA) %in% sub_gene,] ; rm(sub_gene) 
+GSE194040_3 <- GSE194040_ISPY2$mRNA[rownames(GSE194040_ISPY2$mRNA) %in% bc_gene_list,] ; dim(GSE194040_2); dim(GSE194040_3)
+
+# SL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sl$GENE_B), rownames(GSE194040_2))[1:nn]; print(pairs)
+SL_AUC2(data1 = GSE194040_2, data2 = GSE194040_3, drugs = "VELIPARIB", 
+        drug_response = GSE194040_ISPY2$response$pCR, pair = pairs)
+
+# SDL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sdl$GENE_B), rownames(GSE194040_2))[1:nn]; print(pairs)
+SDL_AUC2(data1 = GSE194040_2, data2 = GSE194040_3, drugs = "VELIPARIB", 
+         drug_response = GSE194040_ISPY2$response$pCR, pair = pairs)
+
+rm(GSE194040_ISPY2, GSE194040_2, GSE194040_3, pairs)
+
+# Evaluation data: BrighTNess-GSE164458
+load("./dat.GSE164458.RData") 
+sub_gene <- intersect(tcga_list, rownames(dat.GSE164458$mRNA)) 
+GSE164458_2 <- dat.GSE164458$mRNA[rownames(dat.GSE164458$mRNA) %in% sub_gene,] ; rm(sub_gene); which(is.na(GSE164458_2 )) # no NA
+GSE164458_3 <- dat.GSE164458$mRNA[rownames(dat.GSE164458$mRNA) %in% bc_gene_list,] ; dim(GSE164458_2); dim(GSE164458_3)
+
+# SL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sl$GENE_B), rownames(GSE164458_2))[1:nn]; print(pairs)
+SL_AUC2(data1 = GSE164458_2, data2 = GSE164458_3, drugs = "VELIPARIB", 
+        drug_response = dat.GSE164458$response$binary, pair = pairs)
+
+# SDL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sdl$GENE_B), rownames(GSE164458_2))[1:nn]; print(pairs)
+SDL_AUC2(data1 = GSE164458_2, data2 = GSE164458_3, drugs = "VELIPARIB", 
+         drug_response = dat.GSE164458$response$binary, pair = pairs)
+
+rm(dat.GSE164458, GSE164458_2, GSE164458_3, pairs)
+
+##
+## Drug: OLAPARIB, Target genes: PARP1, PARP2, PARP3
+##
+candidates_sl <- multiple_target2(drugs = "OLAPARIB", interaction = "SL", FDR = 0.2, method = "min")
+candidates_sdl <- multiple_target2(drugs = "OLAPARIB", interaction = "SDL", FDR = 0.2, method = "min")
+
+# Evaluation data: NCT01042379-ISPY2-GSE173839 
+load("./ISPY2_OLAPARIB.RData")
+sub_gene <- intersect(tcga_list, rownames(ISPY2_OLAPARIB$mRNA)) 
+GSE173839_2 <- ISPY2_OLAPARIB$mRNA[rownames(ISPY2_OLAPARIB$mRNA) %in% sub_gene,] ; rm(sub_gene); length(which(is.na(GSE173839_2))) # 
+GSE173839_3 <- ISPY2_OLAPARIB$mRNA[rownames(ISPY2_OLAPARIB$mRNA) %in% bc_gene_list,] ; dim(GSE173839_2); dim(GSE173839_3)
+
+# SL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sl$GENE_B), rownames(GSE173839_2))[1:nn]; print(pairs)
+SL_AUC2(data1 = GSE173839_2, data2 = GSE173839_3, drugs = "OLAPARIB", 
+        drug_response = ISPY2_OLAPARIB$response$binary, pair = pairs)
+
+# SDL partner genes and ROC-AUC
+pairs <- intersect(unique(candidates_sdl$GENE_B), rownames(GSE173839_2))[1:nn]; print(pairs)
+SDL_AUC2(data1 = GSE173839_2, data2 = GSE173839_3, drugs = "OLAPARIB", 
+         drug_response = ISPY2_OLAPARIB$response$binary, pair = pairs)
+
+rm(GSE173839_2, GSE173839_3, ISPY2_OLAPARIB)
 
