@@ -37,13 +37,7 @@ getOR2 <- function(score, idx.R, idx.NR, thr) {
   return(c(odds.ratio, lower.bound, upper.bound, result)) }
 
 
-colSums2<-function(X){
-  if (class(X)=="numeric") y=X
-  if (class(X)=="matrix") y=colSums(X,na.rm=T)
-  return(y)}
-
-
-qnorm.array <- function(mat)     ############# correct one
+qnorm.array <- function(mat)    
 {mat.back = mat 
 	mat = mat[!is.na(mat)]
     mat = rank(mat, ties.method = "average");
@@ -52,7 +46,7 @@ qnorm.array <- function(mat)     ############# correct one
     mat.back}
 
 
-rank.array <- function(mat)     ############# correct one
+rank.array <- function(mat)  
 {mat.back = mat 
 	mat = mat[!is.na(mat)]
     mat = rank(mat, ties.method = "average")/length(mat);
@@ -60,6 +54,7 @@ rank.array <- function(mat)     ############# correct one
     mat.back}
 
 
+# Euclidean distance of phylogenetic similarity scores 
 phylo.profile = function(sr.gene.all){
 	sr.gene1 = sr.gene.all
 	sr.phylo =  cbind(match(sr.gene1$rescuer, phylo$genes), match(sr.gene1$vulnerable, phylo$genes))
@@ -69,12 +64,13 @@ phylo.profile = function(sr.gene.all){
 	featureMat %*% t(feature.weight)}
 
 
-rank.norm= function(ss) {
+rank.norm = function(ss) {
 	out = rank(ss, na.last="keep")/max(1, sum(!is.na(ss)))
 	out[is.na(out)] = 1
 	out}
 
 
+# Calculate ROC-AUC
 getAUC <- function(pval,flag){
 	na.inx=which(!is.na(flag) & !is.na(pval))
 	pval=pval[na.inx]
@@ -90,6 +86,7 @@ getAUC <- function(pval,flag){
 	return(c(auc,prr))}
 
 
+# Bin matrix (q2, tertiles) to values 0, 1 and 2
 bin_matrix <- function(x, direction = "row", bin = TRUE, split = 3) {
   if (direction == "column") {
     rank_norm <- apply(x, 2, rank.array)
@@ -110,23 +107,24 @@ down_counts <- function(x){ifelse(x < 0.33, 1, 0)} # Check the down-regulated ge
 up_counts <- function(x){ifelse(x > (1-0.33), 1, 0)} # Check the up-regulated gene 
 
 
+# For survival analysis, the minimum p-value is used among the p-values generated from different breast cancer datasets.
 sr.find.dd.min <- function(sr.final1){
-  sl.res=NA; FDR=0.2 # step I: hypergeometric (updated)
+  sl.res=NA; FDR=0.2  # Step I: hypergeometric filter
   hyper <- apply(sr.final1[,c(3,4,5)], 2, function(x) p.adjust (x, method = "BH")) # Multiple testing correction
   colnames(hyper) <- c("BH_pval.mRNA1_2" ,  "BH_pval.mRNA1_3" , "BH_pval.mRAN.up_1")
   sr.final1 <- cbind(sr.final1, hyper)
   iy = which(apply(hyper, 1, min)< FDR) # Adjusted p-value with BH method length(iy) = 925
   
   if (length(iy)>1) {
-  sr.final1 = sr.final1[iy,] # step II: survival 
-  clinical.fdr2 = apply(sr.final1[,c(7,9,11)], 2, function(x) p.adjust (x, method = "BH")) # P-value for two datasets (aa, bb)
+  sr.final1 = sr.final1[iy,] # Step II: cox regression filter
+  clinical.fdr2 = apply(sr.final1[,c(7,9,11)], 2, function(x) p.adjust (x, method = "BH")) # P-value for three datasets
   colnames(clinical.fdr2) <- c("BH_bb_pvalue_tcga", "BH_bb_pvalue_meta","BH_bb_pvalue_scanb")
   sr.final1 <- cbind(sr.final1, clinical.fdr2) # Save survival analysis results 
-  iz = which(rowSums(clinical.fdr2 < FDR ) >= 1) # Adjusted p-value with BH method length(iz) = 11
+  iz = which(rowSums(clinical.fdr2 < FDR ) >= 1) # Adjusted p-value with BH method length(iz) = 10
     
   if (length(iz)>1) {
-  sr.final1=sr.final1[iz,] # step III: phylogenetic (updated) 
-  ix=which(sr.final1[,10] < 2.315712e+01 | sr.final1[,11] < 2.315712e+01 ) # PDCD1, CD274 scores
+  sr.final1=sr.final1[iz,] # Step III: phylogenetic filter
+  ix=which(sr.final1[,10] < 2.315712e+01 | sr.final1[,11] < 2.315712e+01 ) # PDCD1, CD274 similarity scores
   sr.final1=sr.final1[ix,]}}
   
   sl.res=sr.final1
@@ -136,15 +134,17 @@ sr.find.dd.min <- function(sr.final1){
 # Function to convert p-value to Z-score
 p_to_z <- function(p) { return(qnorm(1 - p))}
 
+
 sr.find.dd.stouffer <- function(sr.final1){
-  sl.res=NA; FDR=0.2 # step I: hypergeometric (updated)
+  sl.res=NA; FDR=0.2 # Step I: hypergeometric filter
   hyper <- apply(sr.final1[,c(3,4,5)], 2, function(x) p.adjust (x, method = "BH")) # Multiple testing correction
   colnames(hyper) <- c("BH_pval.mRNA1_2" ,  "BH_pval.mRNA1_3" , "BH_pval.mRAN.up_1")
   sr.final1 <- cbind(sr.final1, hyper)
-  iy = which(apply(hyper, 1, min)< FDR) # Adjusted p-value with BH method length(iy) = 892
-  
+  iy = which(apply(hyper, 1, min)< FDR) 
+
+  # For two-tailed tests of 'cov' (the effect of genetic interactions), the p-values should be converted to one-tailed p-values.
   if (length(iy)>1) {
-  sr.final1 = sr.final1[iy,] # step II: survival 
+  sr.final1 = sr.final1[iy,] # Step II: cox regression filter 
   sr.final1[,7] = ifelse(sr.final1[,6] > 0 , (sr.final1[,7])/2, 1 - ((sr.final1[,7])/2) )  
   sr.final1[,9] = ifelse(sr.final1[,8] > 0 , (sr.final1[,9])/2, 1 - ((sr.final1[,9])/2) )  
   sr.final1[,11] = ifelse(sr.final1[,10] > 0 , (sr.final1[,11])/2, 1 - ((sr.final1[,11])/2) )  
@@ -209,41 +209,6 @@ sr.find.dd.stouffer_sd <- function(sr.final1){
   if (flag==3) sl.res=sr.final1
   return(sl.res)}
 
-
-
-sr.find.dd.fisher <- function(sr.final1){
-  sl.res=NA; FDR=0.2  # step I: hypergeometric (updated)
-  hyper <- apply(sr.final1[,c(3,4,5)], 2, function(x) p.adjust (x, method = "BH")) # Multiple testing correction
-  colnames(hyper) <- c("BH_pval.mRNA1_2" ,  "BH_pval.mRNA1_3" , "BH_pval.mRAN.up_1")
-  sr.final1 <- cbind(sr.final1, hyper)
-  iy = which(apply(hyper, 1, min)< FDR) # Adjusted p-value with BH method length(iy) = 892
-  
-  if (length(iy)>1) {
-  sr.final1 = sr.final1[iy,] # step II: survival (two-sided p-values okay to use)
-  weights <- c(1,2,3)
-  #weights <- sqrt(c(1075, 1989, 2969))
-  #weights <- 2*weights/sqrt(sum(weights^2)) # 2*stouffer's method/preserve relative sample size effect
-  
-  #sr.final1[,7] = ifelse(sr.final1[,6] > 0 , (sr.final1[,7])/2, 1 - ((sr.final1[,7])/2) )  
-  #sr.final1[,9] = ifelse(sr.final1[,8] > 0 , (sr.final1[,9])/2, 1 - ((sr.final1[,9])/2) )  
-  #sr.final1[,11] = ifelse(sr.final1[,10] > 0 , (sr.final1[,11])/2, 1 - ((sr.final1[,11])/2) )  
-  
-  p_values <- log(sr.final1[,c(7,9,11)]); p_values[is.na(p_values)] <- 0 # NA -> 1 original p-value
-  fisher_stat <- (-2)*(p_values%*%weights)
-  combined_p_vals <- pchisq(fisher_stat, df = 2 * sum(weights), lower.tail = FALSE)
-  adjusted_pvals <- p.adjust(combined_p_vals, method = "BH") # Perform FDR correction
-    
-  sr.final1 <- cbind(sr.final1, combined_p_vals, adjusted_pvals ) # Save survival analysis results 
-  iz = which(adjusted_pvals < FDR )
-    
-  if (length(iz)>1) {
-  flag=3
-  sr.final1=sr.final1[iz,] # step III: phylogenetic (updated) 
-  ix=which(sr.final1[,12] < 2.315712e+01 | sr.final1[,13] < 2.315712e+01 ) # PDCD1, CD274 scores
-  sr.final1=sr.final1[ix,]} }  
-  
-  if (flag==3) sl.res=sr.final1
-  return(sl.res)}
 
 
 sr.ranking.dd <-function(sr.final1){
