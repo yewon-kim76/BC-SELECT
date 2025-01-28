@@ -135,6 +135,9 @@ sr.find.dd.min <- function(sr.final1){
 p_to_z <- function(p) { return(qnorm(1 - p))}
 
 
+
+
+# Stouffer's method for weighting p-values can be applied in survival analysis to combine p-values derived from multiple breast cancer datasets.
 sr.find.dd.stouffer <- function(sr.final1){
   sl.res=NA; FDR=0.2 # Step I: hypergeometric filter
   hyper <- apply(sr.final1[,c(3,4,5)], 2, function(x) p.adjust (x, method = "BH")) # Multiple testing correction
@@ -145,13 +148,13 @@ sr.find.dd.stouffer <- function(sr.final1){
   # For two-tailed tests of 'cov' (the effect of genetic interactions), the p-values should be converted to one-tailed p-values.
   if (length(iy)>1) {
   sr.final1 = sr.final1[iy,] # Step II: cox regression filter 
-  sr.final1[,7] = ifelse(sr.final1[,6] > 0 , (sr.final1[,7])/2, 1 - ((sr.final1[,7])/2) )  
+  sr.final1[,7] = ifelse(sr.final1[,6] > 0 , (sr.final1[,7])/2, 1 - ((sr.final1[,7])/2) ) 
   sr.final1[,9] = ifelse(sr.final1[,8] > 0 , (sr.final1[,9])/2, 1 - ((sr.final1[,9])/2) )  
   sr.final1[,11] = ifelse(sr.final1[,10] > 0 , (sr.final1[,11])/2, 1 - ((sr.final1[,11])/2) )  
     
   combine_pvalues_stouffer <- function(pvals) {
    Z_scores <- apply(pvals, 2, p_to_z) # Convert p-values to Z-scores
-   weights <- sqrt(c(1075, 1989, 2969))
+   weights <- sqrt(c(1075, 1989, 2969)) # The weight is the function of the square root of the sample sizes.
    combined_Z <- rowSums(t(t(Z_scores) * weights), na.rm = TRUE) / sqrt(sum(weights^2)) # Combine Z-scores using weighted sum
    combined_pvals <- 1 - pnorm(combined_Z) # Convert combined Z-scores back to p-values
    return(combined_pvals) }
@@ -165,7 +168,7 @@ sr.find.dd.stouffer <- function(sr.final1){
     
   if (length(iz)>1) {
   flag=3
-  sr.final1=sr.final1[iz,] # step III: phylogenetic (updated) 
+  sr.final1=sr.final1[iz,] # Step III: phylogenetic filter
   ix=which(sr.final1[,12] < 2.315712e+01 | sr.final1[,13] < 2.315712e+01 ) # PDCD1, CD274 scores
   sr.final1=sr.final1[ix,]} }  
   
@@ -173,44 +176,10 @@ sr.find.dd.stouffer <- function(sr.final1){
   return(sl.res)}
 
 
-sr.find.dd.stouffer_sd <- function(sr.final1){
-  sl.res=NA; FDR=0.2 # step I: hypergeometric (updated)
-  hyper <- apply(sr.final1[,c(3,4,5)], 2, function(x) p.adjust (x, method = "BH")) # Multiple testing correction
-  colnames(hyper) <- c("BH_pval.mRNA1_2" ,  "BH_pval.mRNA1_3" , "BH_pval.mRAN.up_1")
-  sr.final1 <- cbind(sr.final1, hyper)
-  iy = which(apply(hyper, 1, min)< FDR) # Adjusted p-value with BH method length(iy) = 892
-  
-  if (length(iy)>1) {
-    sr.final1 = sr.final1[iy,] # step II: survival 
-    sr.final1[,8] = ifelse(sr.final1[,6] > 0 , (sr.final1[,8])/2, 1 - ((sr.final1[,8])/2) )  
-    sr.final1[,11] = ifelse(sr.final1[,9] > 0 , (sr.final1[,11])/2, 1 - ((sr.final1[,11])/2) )  
-    sr.final1[,14] = ifelse(sr.final1[,12] > 0 , (sr.final1[,14])/2, 1 - ((sr.final1[,14])/2) )  
-    
-    Z_scores <- apply(sr.final1[,c(8,11,14)], 2, p_to_z) # Convert p-values to Z-scores
-    weights <- 1 / sr.final1[,c(7,10,13)]; weights[is.na(weights)] <- 0
-    
-    # Perform row-wise computation using a loop
-    combined_Z <- matrix(0, nrow = nrow(Z_scores))
-    for (i in 1:nrow(Z_scores)) {
-      combined_Z[i] <- sum(Z_scores[i, ] * weights[i, ]) / sqrt(sum(weights[i, ]^2)) } 
-   
-    combined_pvals <- 1 - pnorm(combined_Z) # Convert combined Z-scores back to p-values
-    adjusted_pvals <- p.adjust(combined_pvals, method = "BH") # Perform FDR correction
-    
-    sr.final1 <- cbind(sr.final1, combined_pvals, adjusted_pvals ) # Save survival analysis results 
-    iz = which(adjusted_pvals < FDR ) # Adjusted p-value with BH method length(iz) = 11
-    
-    if (length(iz)>1) {
-    flag=3
-    sr.final1=sr.final1[iz,] # step III: phylogenetic (updated) 
-    ix=which(sr.final1[,12] < 2.315712e+01 | sr.final1[,13] < 2.315712e+01 ) # PDCD1, CD274 scores
-    sr.final1=sr.final1[ix,]} }  
-  
-  if (flag==3) sl.res=sr.final1
-  return(sl.res)}
 
 
-
+# A possible candidate of SR partner genes can be prioritized based on phylogenetic scores, 
+# where the minimum scores between PDCD1 and CD274 are utilized.
 sr.ranking.dd <-function(sr.final1){
   ps1 = sr.final1[,12] ; ps2 = sr.final1[,13] ## updated 								
   ps = ifelse(ps1 >= ps2, ps2, ps1)	
@@ -218,96 +187,79 @@ sr.ranking.dd <-function(sr.final1){
   return(ii)}
 
 
+# Patient scoring metric used in SELECT
 sr.score.dd <- function(dat, sr.final1){ # SELECT-score method
   score1 = rep(0,ncol(dat$mRNA))	
   partners1 = match(sr.final1[,2], dat$genes)
   partners1 = partners1[!is.na(partners1)]
   if (length(partners1)==1) 
-    score1=1*(dat$mRNA.rank2[partners1,] < 0.33) ## mRNA.rank2 -> required bin-matrix
+    score1=1*(dat$mRNA.rank2[partners1,] < 0.33) 
   if (length(partners1) >1) 
-    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) ## f (proportion of DD -> cancer cell survival)
-  score1=1-score1		## 1-f -> cancer cell death
+    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) # f -> probability of cancer cell survival
+  score1=1-score1		# 1-f -> probability of cancer cell death, increase the chances of drug efficacy
   return(score1)}
 
 
-new.sr.score.dd <- function(dat, sr.final1){ # gene expression ratio
+# The patient scoring metric used in BC-SELECT requires SR partner genes selected through the gene pair identification step, 
+# genes from the Nanostring list, and target gene expression (PDCD1/CD274).
+new.sr.score.dd <- function(dat, sr.final1){ 
   score1 = rep(0,ncol(dat$mRNA))	
   partners1 = match(sr.final1[,2], dat$genes)
   partners1 = partners1[!is.na(partners1)]
   if (length(partners1)==1)
-    score1=1*(dat$mRNA.rank2[partners1,] < 0.33)  ## mRNA.rank2 -> required bin-matrix
+    score1=1*(dat$mRNA.rank2[partners1,] < 0.33)  
   if (length(partners1) >1)
-    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) ## f
+    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) # f -> probability of cancer cell survival
   
-  sub_gene <- intersect(nanostring, rownames(dat$mRNA)) ## nanostring gene list 
+  sub_gene <- intersect(nanostring, rownames(dat$mRNA)) # NanoString list 
   new_data <- dat$mRNA[rownames(dat$mRNA) %in% sub_gene,]
   new_data2 <- bin_matrix(new_data, direction = "row", bin = FALSE)
-  new_data2 <- na.omit(new_data2)  ## remove NA
+  new_data2 <- na.omit(new_data2)  # Remove NA
   whole_down <- apply(new_data2, 2 , down_counts)
-  whole_down_patient <- as.numeric(colSums(whole_down))  ## count the down-regulated gene for each patient
+  whole_down_patient <- as.numeric(colSums(whole_down))  # Count the down-regulated gene for each patient
   whole_score <- whole_down_patient / dim(new_data2)[1]
  
-  new_score = (1- score1)/ (1-whole_score) ## 1-f
+  new_score = (1- score1)/ (1-whole_score) # Expanded gene expression ratio 
   
   return(new_score)}
 
-eval.auc.dd = function(sr.final, dat, ires1, iirs1){# target gene expression: PD1/PDL1
+
+# Using the expanded gene expression ratio, we calculate patient response scores based on target gene expression for BC-SELECT. 
+# Additionally, the two score components of BC-SELECT are also calculated.
+eval.auc.dd = function(sr.final, dat, ires1, iirs1){
   res = NULL
-  sr.x = cbind(genes[sr.final[,1]],genes[sr.final[,2]]) # gene names
-  #score1 = sr.score.dd(dat, sr.x) # for SELECT comparison 
-  score1 = new.sr.score.dd(dat, sr.x) # SR score
-  a <- which(rownames(dat$mRNA) == "PDCD1"); b <- which(rownames(dat$mRNA) == "CD274") # target genes
-  target <- as.numeric(dat$mRNA[a,])*as.numeric(dat$mRNA[b,]) # simple product
-  pval = score1[c(ires1,iirs1)] # reorder SR score
-  target = target[c(ires1,iirs1)] # reorder target gene expression
-  flag = c(rep(1,length(ires1)),rep(0,length(iirs1)))
-  res$score = pval; res$flag=flag # SR score
+  sr.x = cbind(genes[sr.final[,1]],genes[sr.final[,2]]) 
+  #score1 = sr.score.dd(dat, sr.x) # For SELECT comparison 
+  score1 = new.sr.score.dd(dat, sr.x) # Bring Expaned gene expression ratio
+  a <- which(rownames(dat$mRNA) == "PDCD1"); b <- which(rownames(dat$mRNA) == "CD274") # Target genes expression
+  target <- as.numeric(dat$mRNA[a,])*as.numeric(dat$mRNA[b,]) # Simple product
+  pval = score1[c(ires1,iirs1)] # Reorder Expaned gene expression ratio
+  target = target[c(ires1,iirs1)] # Reorder target gene expression
+  flag = c(rep(1,length(ires1)),rep(0,length(iirs1))) # Reorder drug response
+  res$score = pval; res$flag=flag # Expaned gene expression ratio
   res$score2 = pval*rank.norm(target) # BC-SELECT 
-  res$score3 = rank.norm(target) # Normalized target expression
+  res$score3 = rank.norm(target) # Target genes expression
   res$sr.x=sr.x
   return(res)}
 
 
 
 
-
-# For Monte Carlo experiment random sampling genes (required reordering during simulation)----
-null_sr.score <- function(dat, null_genes){
-  score1=rep(0,ncol(dat$mRNA))	
-  partners1=match(null_genes, dat$genes)
-  partners1=partners1[!is.na(partners1)]
-  if (length(partners1)==1) 
-    score1=1*(dat$mRNA.rank2[partners1,] < 0.33) ## mRNA.rank2 -> required bin-matrix
-  if (length(partners1) >1) 
-    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) ## f
-  
-  score1 = 1- score1		## 1-f
-  return(score1)}
-
-
-target_value <- function(dat){
-  a <- which(rownames(dat$mRNA) == "PDCD1"); b <- which(rownames(dat$mRNA) == "CD274") # Target genes
+# For Monte Carlo experiment random sampling genes (required reordering during simulation)-------------------
+target_value2 <- function(dat){
+  a <- which(rownames(dat$mRNA) == pair[11]); b <- which(rownames(dat$mRNA) == pair[12]) # Target genes expression
   target <- as.numeric(dat$mRNA[a,])*as.numeric(dat$mRNA[b,]) # Simple product
   return(target)}
 
-# empirical p-values update: adding normalization
+# Using randomly selected genes, we calculate the expanded gene expression ratio.
 null_sr.score2 <- function(dat, null_genes){
   score1=rep(0,ncol(dat$mRNA))	
   partners1=match(null_genes, dat$genes)
   partners1=partners1[!is.na(partners1)]
   if (length(partners1)==1) 
-    score1=1*(dat$mRNA.rank2[partners1,] < 0.33) ## mRNA.rank2 -> required bin-matrix
+    score1=1*(dat$mRNA.rank2[partners1,] < 0.33) 
   if (length(partners1) >1) 
-    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) ## f
+    score1=colSums(dat$mRNA.rank2[partners1,] < 0.33, na.rm=T)/length(partners1) # f -> probability of cancer cell survival
 
-  score1 = (1- score1)/ (1-whole_score) ## 1-f
+  score1 = (1- score1)/ (1-whole_score) # 1-f -> probability of cancer cell death, increase the chances of drug efficacy
   return(score1)}
-
-
-
-target_value2 <- function(dat){
-  a <- which(rownames(dat$mRNA) == pair[11]); b <- which(rownames(dat$mRNA) == pair[12]) # Target genes
-  target <- as.numeric(dat$mRNA[a,])*as.numeric(dat$mRNA[b,]) # Simple product
-  return(target)}
-
-
