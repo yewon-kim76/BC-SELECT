@@ -1,1 +1,98 @@
+## BC-SELECT patient response scores, drug response (pCR), and sample IDs are saved for each dataset.
+
+rm(list=ls())
+library(readxl); library(ggplot2); library(tidyverse); library(dplyr); library(pROC)
+library(hrbrthemes); library(viridis); library(forcats); library(data.table);
+library(pracma); library(ROCR);library(gridExtra); library(ggprism)
+setwd("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5")
+source("./Ranking_Pairs5.R") # Some of the source functions are required.
+
+# Odds ratio (Table1, Figure 2)
+score_GSE50948 <- readRDS("./score_GSE50948.rds")
+score_GSE37946 <- readRDS("./score_GSE37946.rds")
+score_GSE42822 <- readRDS("./score_GSE42822.rds")
+score_transneo <- readRDS("./score_transneo.rds")
+score_GSE194040 <- readRDS("./score_GSE194040.rds")
+score_GSE164458 <- readRDS("./score_GSE164458.rds")
+score_GSE173839 <- readRDS("./score_GSE173839.rds")
+sco_pemb <- readRDS("./score_pemb.rds")
+sco_durv <- readRDS("./score_durv.rds")
+
+thres = 0.51 # The threshold for the odds ratio calculation is determined during the hyperparameter tuning step.
+
+# Save all information across all datasets.
+ODDS <- data.frame(
+  data = c("GSE50948","GSE37946","GSE42822","transneo",
+           "GSE194040","GSE164458","GSE173839",
+           "Durv","Pemb"),
+  odds = rep("",9),
+  lower = rep("",9),
+  upper = rep("",9),
+  p_val = rep("",9))
+
+ODDS[1,2:5] <- getOR2(score = score_GSE50948$new_sdl_score_target, idx.R = which(score_GSE50948$response == "1"),
+                      idx.NR = which(score_GSE50948$response == "0"), thr = thres)
+
+ODDS[2,2:5] <- getOR2(score = score_GSE37946$new_sdl_score_target, idx.R = which(score_GSE37946$response == "1"),
+                      idx.NR = which(score_GSE37946$response == "0",), thr = thres)
+
+ODDS[3,2:5] <- getOR2(score = score_GSE42822$new_sdl_score_target, idx.R = which(score_GSE42822$response == "1"),
+                      idx.NR = which(score_GSE42822$response == "0"), thr = thres)
+
+ODDS[4,2:5] <- getOR2(score = score_transneo$new_sl_score_target, idx.R = which(score_transneo$response == "1"),
+                      idx.NR = which(score_transneo$response == "0"), thr = thres)
+
+ODDS[5,2:5] <- getOR2(score = score_GSE194040$new_sdl_score_target, idx.R = which(score_GSE194040$response == "1"),
+                      idx.NR = which(score_GSE194040$response == "0"), thr = thres)
+
+ODDS[6,2:5] <- getOR2(score = score_GSE164458$new_sl_score_target, idx.R = which(score_GSE164458$response == "1"),
+                      idx.NR = which(score_GSE164458$response == "0"), thr = thres)
+
+ODDS[7,2:5] <- getOR2(score = score_GSE173839$new_sl_score_target, idx.R = which(score_GSE173839$response == "1"),
+                      idx.NR = which(score_GSE173839$response == "0"), thr = thres)
+
+ODDS[8,2:5] <- getOR2(score = sco_durv$score2, idx.R = which(sco_durv$flag == "1"),
+                      idx.NR = which(sco_durv$flag == "0"), thr = thres)
+
+ODDS[9,2:5] <- getOR2(score = sco_pemb$score2, idx.R = which(sco_pemb$flag == "1"),
+                       idx.NR = which(sco_pemb$flag == "0"),thr = thres)
+
+# Assign colors to each type of drug.
+colors <- c("TRASTUZUMAB (GSE50948)" = "blue", "TRASTUZUMAB (GSE37946)" = "blue4", 
+            "TRASTUZUMAB (GSE42822)" = "cornflowerblue", "TRASTUZUMAB (TransNEO)" = "cadetblue",
+            "VELIPARIB (GSE194040)" = "red", "VELIPARIB (GSE164458)"  ="darkred" ,
+            "OLAPARIB (GSE173839)" = "orange", 
+            "DURVALUMAB (GSE173839)" = "darkorchid4",
+            "PEMBROLIZUMAB (GSE194040)" = "darksalmon")
+
+data <- c("TRASTUZUMAB (GSE50948)", "TRASTUZUMAB (GSE37946)", 
+          "TRASTUZUMAB (GSE42822)" , "TRASTUZUMAB (TransNEO)",
+          "VELIPARIB (GSE194040)", "VELIPARIB (GSE164458)" ,
+          "OLAPARIB (GSE173839)" , "DURVALUMAB (GSE173839)" ,"PEMBROLIZUMAB (GSE194040)")
+
+# threshold = 0.51
+odd2 <- c("2.318", "2.263" ,"11.25*", "1.895" ,"3.117*", "1.803*", "3.542*", "3.273*", "7.057*")
+odd3 <- c("no","no","sig","no","sig","sig","sig","sig","sig")
+
+odds <- mutate_all(ODDS[,2:5], function(x) as.numeric(as.character(x)))
+
+DATA <- data.frame(data, odds, odd2, odd3)
+DATA$data <- factor(DATA$data, levels = DATA$data)
+
+ggplot(DATA, aes(x = data, y = odds, fill = data)) + geom_bar(stat="identity") + 
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        strip.text = element_text(face="bold", size=9)) + xlab("Dataset") + ylab("Odds ratio") +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) + 
+  scale_fill_manual("Dataset", values = colors) +
+  geom_text(aes(label = odd2, y = odds), position = position_dodge(width = 1),
+            vjust = -0.5, size = 5) # + geom_errorbar(aes(ymin = lower, ymax = upper), position = position_dodge(0.9), width = 0.2)
+
+# P-values from Fisher's exact test are converted to their multiplicity-corrected form.
+p_values <- DATA$p_val; print(p_values)
+p_values_adj <- p.adjust(p_values[1:7], method = "BH"); round(p_values_adj,2); 
+p_values_adj <- p.adjust(p_values[8:9], method = "BH"); round(p_values_adj,2); 
+
 
