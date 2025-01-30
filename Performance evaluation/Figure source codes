@@ -7,7 +7,7 @@ library(pracma); library(ROCR);library(gridExtra); library(ggprism)
 setwd("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5")
 source("./Ranking_Pairs5.R") # Some of the source functions are required.
 
-# Odds ratio (Table1, Figure 2)
+# Odds ratio (Table 1, Figure 2)
 score_GSE50948 <- readRDS("./score_GSE50948.rds")
 score_GSE37946 <- readRDS("./score_GSE37946.rds")
 score_GSE42822 <- readRDS("./score_GSE42822.rds")
@@ -96,3 +96,299 @@ p_values_adj <- p.adjust(p_values[1:7], method = "BH"); round(p_values_adj,2);
 p_values_adj <- p.adjust(p_values[8:9], method = "BH"); round(p_values_adj,2); 
 
 
+
+# Box plots (Figure 3a)
+score_GSE50948$Outcome <- ifelse(score_GSE50948$response == "1", "Responder", "Non-Responder")
+score_GSE42822$Outcome <- ifelse(score_GSE42822$response == "1", "Responder", "Non-Responder")
+score_GSE37946$Outcome <- ifelse(score_GSE37946$response == "1", "Responder", "Non-Responder")
+score_transneo$Outcome <- ifelse(score_transneo$response == "1", "Responder", "Non-Responder")
+score_GSE194040$Outcome <- ifelse(score_GSE194040$response == "1", "Responder", "Non-Responder")
+score_GSE164458$Outcome <- ifelse(score_GSE164458$response == "1", "Responder", "Non-Responder")
+score_GSE173839$Outcome <- ifelse(score_GSE173839$response == "1", "Responder", "Non-Responder")
+
+colnames(score_GSE50948)[2:4] <-c("old","new","final")
+colnames(score_GSE37946)[2:4] <-c("old","new","final")
+colnames(score_GSE42822)[2:4] <-c("old","new","final")
+colnames(score_transneo)[2:4] <-c("old","new","final")
+colnames(score_GSE194040)[2:4] <-c("old","new","final")
+colnames(score_GSE164458)[2:4] <-c("old","new","final")
+colnames(score_GSE173839)[2:4] <-c("old","new","final")
+
+score_GSE50948$dataset = "GSE50948"
+score_GSE42822$dataset = "GSE42822"
+score_GSE37946$dataset = "GSE37946"
+score_transneo$dataset = "TransNEO"
+score_GSE194040$dataset = "GSE194040"
+score_GSE164458$dataset = "GSE164458"
+score_GSE173839$dataset = "GSE173839"
+
+score_GSE50948$treatment = "TRASTUZUMAB"
+score_GSE42822$treatment = "TRASTUZUMAB"
+score_GSE37946$treatment = "TRASTUZUMAB"
+score_transneo$treatment = "TRASTUZUMAB"
+score_GSE194040$treatment = "VELIPARIB"
+score_GSE164458$treatment = "VELIPARIB"
+score_GSE173839$treatment = "OLAPARIB"
+
+# Combine data frames
+combined_data2 <- rbind(score_GSE50948, score_GSE37946, score_GSE42822, score_transneo,
+                        score_GSE194040, score_GSE164458, score_GSE173839)
+
+p_values <- by(combined_data2, combined_data2$dataset, function(data) {
+  wilcox.test(final ~ Outcome, data = data, exact = FALSE, alternative = "less")$p.value })
+p_values_adj <- p.adjust(p_values, method = "BH")
+round(p_values_adj,2)
+
+p_value_df <- tibble::tribble( # Print values
+  ~group1,              ~group2,     ~p,    ~y.position,     ~dataset,    ~treatment ,
+  "Non-Responder",    "Responder",    0.09,       1.7,    "GSE164458",   "VELIPARIB",
+  "Non-Responder",    "Responder",    0.00,       1.7,    "GSE173839",   "OLAPARIB",
+  "Non-Responder",    "Responder",    0.04,       1.7,    "GSE194040",   "VELIPARIB",
+  "Non-Responder",    "Responder",    0.17,       1.7,    "GSE37946",    "TRASTUZUMAB",
+  "Non-Responder",    "Responder",    0.02,       1.7,    "GSE42822",    "TRASTUZUMAB",
+  "Non-Responder",    "Responder",    0.06,       1.7,    "GSE50948",    "TRASTUZUMAB",
+  "Non-Responder",    "Responder",    0.06,       1.7,    "TransNEO",    "TRASTUZUMAB")
+
+p_value_df <- as.data.frame(p_value_df)
+p_value_df[2,3] <- "< 0.01"
+
+treatment_order <- c("TRASTUZUMAB", "VELIPARIB", "OLAPARIB")
+dataset_order <- c("GSE50948", "GSE37946", "GSE42822", "TransNEO", "GSE194040", "GSE164458","GSE173839")
+
+combined_data2$treatment <- factor(combined_data2$treatment, levels = treatment_order)
+combined_data2$dataset <- factor(combined_data2$dataset, levels = dataset_order)
+
+p_value_df$treatment <- factor(p_value_df$treatment, levels = treatment_order)
+p_value_df$dataset <- factor(p_value_df$dataset, levels = dataset_order)
+
+
+ggplot(combined_data2, aes(x = Outcome, y = final)) +
+  geom_boxplot(aes(fill = Outcome)) + facet_grid(. ~ treatment + dataset) + 
+  geom_point(position = position_jitter(seed = 1, width = 0.2)) +
+  labs(y = "Patient's predicted response scores", fill = "Outcome") +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        legend.position = "right",
+        strip.text = element_text(face="bold", size=9)) + scale_fill_brewer(palette="Set1") + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  add_pvalue(p_value_df)
+
+
+
+# Box plots (Figure 3b)
+SR_GSE194040 <- data.frame(score = sco_pemb$score2, group = sco_pemb$flag)
+SR_GSE173839 <- data.frame(score = sco_durv$score2, group = sco_durv$flag)
+
+SR_GSE194040$dataset = "GSE194040"; SR_GSE173839$dataset = "GSE173839"
+SR_GSE194040$treatment = "PEMBROLIZUMAB"; SR_GSE173839$treatment = "DURVALUMAB"
+
+SR_GSE194040$Outcome <- ifelse(SR_GSE194040$group == "1","Responder", "Non-Responder" )
+SR_GSE173839$Outcome <- ifelse(SR_GSE173839$group == "1", "Responder", "Non-Responder" )
+
+combined_data2 <- rbind(SR_GSE194040, SR_GSE173839)
+
+p_values <- by(combined_data2, combined_data2$dataset, function(data) {
+  wilcox.test(score ~ Outcome, data = data, alternative = "less")$p.value })
+p_values_adj <- p.adjust(p_values, method = "BH")
+round(p_values_adj,2)
+
+p_value_df <- tibble::tribble(
+  ~group1, ~group2, ~p,  ~y.position, ~dataset,                     ~treatment,
+  "Non-Responder",    "Responder",    0.00,   3.5,  "GSE194040", "PEMBROLIZUMAB",
+  "Non-Responder",    "Responder",    0.00,   3.5,   "GSE173839", "DURVALUMAB")
+
+p_value_df <- data.frame(p_value_df)
+p_value_df[1,3] <- "< 0.01" ;p_value_df[2,3] <- "< 0.01"  
+
+pairwise <- tibble::tribble(
+  ~group1,          ~group2,         ~p.signif,    ~y.position, ~dataset,  ~treatment,
+  "Non-Responder",    "Responder",      "****",    4,     "GSE194040", "PEMBROLIZUMAB",
+  "Non-Responder",    "Responder",      "****",    4,      "GSE173839", "DURVALUMAB")
+
+ggplot(combined_data2, aes(x = Outcome, y = score)) +
+  geom_boxplot(aes(fill = Outcome))+ facet_grid(. ~ treatment + dataset) + 
+  geom_point(position = position_jitter(seed = 1, width = 0.2)) +
+  labs(y = "Patient's predicted response scores", fill = "Outcome") +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        legend.position = "right",
+        strip.text = element_text(face="bold", size=9)) + scale_fill_brewer(palette="Set1") + 
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))  + 
+  add_pvalue(p_value_df, y.position = 1.3)  
+
+
+
+# ENLIGHT and SELECT comparison using immunotherapy (Figure 4)
+GSE173839 <- read.csv("./GSE173839.txt") # ENLIGHT scores
+cc <- ifelse(GSE173839$Response == "Responder", 1, 0)
+ceiling(getAUC(GSE173839$Score, cc)[1]*100)/100 # ENLIGHT
+
+df <- data.frame(dataset = rep(c(  "DURVALUMAB (GSE173839)",
+                                   "PEMBROLIZUMAB (GSE194040)", 
+                                   "DURVALUMAB (GSE173839)"),each = 2),
+                 Method = c(c("BC-SELECT","ENLIGHT"), rep(c("BC-SELECT","SELECT"), 2)), 
+                 AUC = c( 0.71, 0.68,
+                          0.78, 0.61,
+                          0.71, 0.65))
+
+
+ggplot(data = df, aes(x=dataset, y = AUC, fill = Method)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.6) +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        legend.position = "bottom") + scale_fill_brewer(palette="Set1") +
+  geom_text(aes(label = AUC, y = AUC), position = position_dodge(width = 0.6),
+            vjust = -0.5, size = 5) + ylab("AUC of ROC") + xlab("Dataset")
+
+
+
+
+# Supplementary figure 1a,b
+# Summary ROC, PR-ROC curve
+roc_GSE50948 <- roc(score_GSE50948$response, score_GSE50948$new_sdl_score_target) # true, predicted
+roc_GSE37946 <- roc(score_GSE37946$response, score_GSE37946$new_sdl_score_target) # true, predicted
+roc_GSE42822 <- roc(score_GSE42822$response, score_GSE42822$new_sdl_score_target) # true, predicted
+roc_TransNEO <- roc(score_transneo$response, score_transneo$new_sl_score_target) # true, predicted
+roc_GSE194040 <- roc(score_GSE194040$response, score_GSE194040$new_sdl_score_target) # true, predicted 
+roc_GSE164458 <- roc(score_GSE164458$response, score_GSE164458$new_sl_score_target) # true, predicted
+roc_GSE173839 <- roc(score_GSE173839$response, score_GSE173839$new_sl_score_target) # true, predicted
+
+roclist1 <- list("TRASTUZUMAB (GSE50948)" = roc_GSE50948,
+                "TRASTUZUMAB (GSE37946)" = roc_GSE37946,
+                "TRASTUZUMAB (GSE42822)" = roc_GSE42822,
+                "TRASTUZUMAB (TransNEO)" = roc_TransNEO)
+
+roclist2 <- list("VELIPARIB (GSE194040)" = roc_GSE194040,
+                 "VELIPARIB (GSE164458)" = roc_GSE164458,
+                 "OLAPARIB (GSE173839)" = roc_GSE173839)
+
+colors1 <- c("TRASTUZUMAB (GSE50948)" = "blue", "TRASTUZUMAB (GSE37946)" = "blue4", 
+            "TRASTUZUMAB (GSE42822)" = "cornflowerblue", "TRASTUZUMAB (TransNEO)" = "cadetblue")
+
+colors2 <- c("VELIPARIB (GSE194040)" = "red", "VELIPARIB (GSE164458)"  ="darkred" , "OLAPARIB (GSE173839)" = "orange")
+
+
+p1 <-ggroc(roclist1, size = 1.2, legacy.axes = TRUE)  +
+       geom_segment(aes(x = 1, xend = 0, y = 1, yend = 0), color="grey", linetype="dashed") +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        legend.position = c(0.8,0.3)) + xlab("False positive rate") + ylab("True positive rate") +
+  labs(color = "Dataset") + scale_color_manual(values = colors1) 
+
+
+p2 <-ggroc(roclist2, size = 1.2, legacy.axes = TRUE)  +
+  geom_segment(aes(x = 1, xend = 0, y = 1, yend = 0), color="grey", linetype="dashed") +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        legend.position = c(0.8,0.3)) + xlab("False positive rate") + ylab("True positive rate") +
+  labs(color = "Dataset") + scale_color_manual(values = colors2) 
+
+
+
+# PR-ROC curve
+roc_GSE50948_2 <- data.frame(coords(roc_GSE50948, ret = c("precision", "recall"), transpose = FALSE))
+roc_GSE37946_2 <- data.frame(coords(roc_GSE37946, ret = c("precision", "recall"), transpose = FALSE))
+roc_GSE42822_2 <- data.frame(coords(roc_GSE42822, ret = c("precision", "recall"), transpose = FALSE))
+roc_TransNEO_2 <- data.frame(coords(roc_TransNEO, ret = c("precision", "recall"), transpose = FALSE))
+roc_GSE194040_2 <- data.frame(coords(roc_GSE194040, ret = c("precision", "recall"), transpose = FALSE))
+roc_GSE164458_2 <- data.frame(coords(roc_GSE164458, ret = c("precision", "recall"), transpose = FALSE))
+roc_GSE173839_2 <- data.frame(coords(roc_GSE173839, ret = c("precision", "recall"), transpose = FALSE))
+
+# Add a column to each data frame to indicate the dataset
+roc_GSE50948_2$Dataset <- "TRASTUZUMAB (GSE50948)"
+roc_GSE37946_2$Dataset <- "TRASTUZUMAB (GSE37946)"
+roc_GSE42822_2$Dataset <-  "TRASTUZUMAB (GSE42822)"
+roc_TransNEO_2$Dataset <- "TRASTUZUMAB (TransNEO)"
+roc_GSE194040_2$Dataset <- "VELIPARIB (GSE194040)"
+roc_GSE164458_2$Dataset <- "VELIPARIB (GSE164458)"
+roc_GSE173839_2$Dataset <- "OLAPARIB (GSE173839)"
+
+# Combine data frames
+combined_data1 <- rbind(roc_GSE50948_2, roc_GSE37946_2, roc_GSE42822_2 , roc_TransNEO_2)
+combined_data2 <- rbind(roc_GSE194040_2 , roc_GSE164458_2, roc_GSE173839_2)
+
+
+# Plot precision-recall curves
+p3 <- ggplot() +
+  geom_line(data = roc_GSE50948_2, aes(x = recall, y = precision, color = "TRASTUZUMAB (GSE50948)"), size = 1.2) +
+  geom_line(data = roc_GSE37946_2, aes(x = recall, y = precision, color = "TRASTUZUMAB (GSE37946)"), size = 1.2) +
+  geom_line(data = roc_GSE42822_2, aes(x = recall, y = precision, color = "TRASTUZUMAB (GSE42822)"), size = 1.2) +
+  geom_line(data = roc_TransNEO_2, aes(x = recall, y = precision, color = "TRASTUZUMAB (TransNEO)"), size = 1.2) +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(), legend.position = "none" ) +  # legend.position = "bottom"
+  xlab("Recall") + ylab("Precision") + ylim(c(0,1)) +
+  scale_color_manual(values = colors1) 
+
+
+p4 <- ggplot() +
+  geom_line(data = roc_GSE194040_2, aes(x = recall, y = precision, color = "VELIPARIB (GSE194040)"), size = 1.2) +
+  geom_line(data = roc_GSE164458_2, aes(x = recall, y = precision, color = "VELIPARIB (GSE164458)"), size = 1.2) +
+  geom_line(data = roc_GSE173839_2, aes(x = recall, y = precision, color = "OLAPARIB (GSE173839)"), size = 1.2) +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(), legend.position = "none" ) +  # legend.position = "bottom"
+  xlab("Recall") + ylab("Precision") + ylim(c(0,1)) +
+  scale_color_manual(values = colors2) 
+
+
+grid.arrange(p1, p3, ncol = 2)
+grid.arrange(p2, p4, ncol = 2)
+
+
+# Supplementary figure 1c
+# Summary ROC, PR-ROC curve
+roc_pemb <- roc(sco_pemb$flag, sco_pemb$score2) # true, predicted
+roc_durv <- roc(sco_durv$flag, sco_durv$score2) # true, predicted
+
+roclist <- list("DURVALUMAB (GSE173839)" = roc_durv, "PEMBROLIZUMAB (GSE194040)" = roc_pemb)
+colors <- c("DURVALUMAB (GSE173839)" = "darkorchid4", "PEMBROLIZUMAB (GSE194040)" = "darksalmon")
+
+p1<- ggroc(roclist, size = 1.2, legacy.axes = TRUE)  +
+  geom_segment(aes(x = 1, xend = 0, y = 1, yend = 0), color="grey", linetype="dashed") +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        legend.position = c(0.8,0.3)) + xlab("False positive rate") + ylab("True positive rate") +
+  labs(color = "Dataset") + scale_color_manual(values = colors) 
+
+# PR-ROC curve
+roc_pemb2 <- data.frame(coords(roc_pemb, ret = c("precision", "recall"), transpose = FALSE))
+roc_durv2 <- data.frame(coords(roc_durv, ret = c("precision", "recall"), transpose = FALSE))
+
+# Add a column to each data frame to indicate the dataset
+roc_pemb2$dataset <- "PEMBROLIZUMAB (GSE194040)"; roc_durv2$dataset <- "DURVALUMAB (GSE173839)"
+
+# Combine data frames
+combined_data <- rbind(roc_pemb2, roc_durv2)
+
+colors <- c("DURVALUMAB (GSE173839)" = "darkorchid4", "PEMBROLIZUMAB (GSE194040)" = "darksalmon")
+
+# Plot precision-recall curves
+p2<- ggplot() +
+  geom_line(data = roc_pemb2, aes(x = recall, y = precision, color = "PEMBROLIZUMAB (GSE194040)"), size = 1.2) +
+  geom_line(data = roc_durv2, aes(x = recall, y = precision, color = "DURVALUMAB (GSE173839)"), size = 1.2) +
+  theme(panel.border = element_rect(color = "black", fill = NA),  # Add border with color black
+        panel.grid.major = element_blank(),  # Add major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),
+        legend.position = "none") + xlab("Recall") + ylab("Precision") + ylim(c(0,1)) +
+  scale_color_manual(values = colors) 
+
+grid.arrange(p1, p2, ncol = 2)
+
+
+# Subtype analysis
