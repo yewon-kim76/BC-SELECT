@@ -1,4 +1,4 @@
-BC-SELECT is a computational tool adapted from SELECT (Cell, 2021) to predict drug responses in early-stage breast cancer patients using transcriptome data. 
+BC-SELECT is a computational tool adapted from SELECT (Cell, 2021) to predict drug responses in non-metastatic breast cancer patients using transcriptome data. 
 
 It involves two main steps: (1) a 'gene pair identification' step and (2) 'fine-tuning hyperparameters and validation performance'. 
 The first part leverages large-scale cell-line datasets and breast cancer patient cohorts, including Breast Cancer TCGA, METABRIC, and SCAN-B, to identify 
