@@ -1,0 +1,435 @@
+rm(list=ls())
+set.seed(12345) # Simulation for empirical p-values
+setwd("/data/kimy35/BC-SELECT1.5")
+source("./Ranking_Pairs5.R") # import functions
+
+# bring SR/SL/SDL pairs 
+BC_SELECT_Supplementary_Tables <- read_excel("BC_SELECT_Supplementary Tables.xlsx", sheet = "Supplementary Table2", col_names = FALSE)
+BC_SELECT_Supplementary_Tables <- BC_SELECT_Supplementary_Tables[-c(1,3),-c(1)]
+colnames(BC_SELECT_Supplementary_Tables) <- as.character(unlist(BC_SELECT_Supplementary_Tables[1, ]))
+BC_SELECT_Supplementary_Tables <- BC_SELECT_Supplementary_Tables[-1, ]
+
+# for SL/SDL
+nn=55
+tcga_list <- readRDS(file = "./TCGA_genes.rds"); tcga_list <- tcga_list[1:19001] # remove PD1/PDL1
+bc_gene_list <- read.delim("./bc_gene_list.txt", stringsAsFactors=TRUE); bc_gene_list <- as.character(bc_gene_list$Gene.Symbol)
+nanostring=fread("./immuno/nanostring.txt")$"Gene Name" ## 1154 genes
+
+# SL
+calc_sl_score <- function(drug_pair_col, drug_targets, score_name, expr_mat) {
+  # Keep only genes present in both gene lists and expression matrix
+  sub_gene <- intersect(tcga_list, rownames(expr_mat))
+  data1 <- expr_mat[rownames(expr_mat) %in% sub_gene, , drop = FALSE]
+  data2 <- expr_mat[rownames(expr_mat) %in% bc_gene_list, , drop = FALSE]
+  
+  # Normalize
+  prediction_data_row_norm <- bin_matrix(data1, direction = "row", bin = FALSE)
+  prediction_data_col_norm <- bin_matrix(data1, direction = "column", bin = FALSE)
+  
+  # SL pairs
+  pair <- BC_SELECT_Supplementary_Tables[[drug_pair_col]][1:55]
+  pair <- intersect(pair, rownames(prediction_data_row_norm))
+  
+  # SL pair scores
+  pair_mat <- prediction_data_row_norm[pair, , drop = FALSE]
+  
+  potential_sl <- 0;  active_sl <- 0
+  
+  if (sum(!is.na(pair_mat)) / length(pair_mat) > 0.5) {
+    potential_sl <- ifelse(!is.na(pair_mat), potential_sl + 1, potential_sl)
+    active_sl <- ifelse(pair_mat < 0.33 & !is.na(pair_mat), active_sl + 1, active_sl) }
+  
+  # Whole SL score
+  prediction_data_row_norm2 <- bin_matrix(data2, direction = "row", bin = FALSE)
+  prediction_data_row_norm2 <- na.omit(prediction_data_row_norm2)
+  whole_down <- apply(prediction_data_row_norm2, 2, down_counts)
+  whole_down_patient <- as.numeric(colSums(whole_down))
+  whole_sl_score <- whole_down_patient / nrow(prediction_data_row_norm2)
+  
+  # Target score
+  tscore <- colSums((prediction_data_col_norm[drug_targets, , drop = FALSE] >= 0.2) * 1, na.rm = TRUE) / length(drug_targets)
+  normal_expression_targets <- as.numeric(colMeans(prediction_data_row_norm[drug_targets, , drop = FALSE], na.rm = TRUE) )
+  
+  # Final score
+  old_sl_score <- (colSums(active_sl, na.rm = TRUE) / colSums(potential_sl, na.rm = TRUE)) * tscore
+  new_sl_score <- old_sl_score / whole_sl_score
+  new_sl_score_target <- new_sl_score * normal_expression_targets
+  
+  out <- data.frame(new_sl_score_target)
+  colnames(out) <- score_name; rownames(out) <- colnames(prediction_data_row_norm)
+  
+  out }
+
+
+
+# SDL
+calc_sdl_score <- function(drug_pair_col, drug_targets, score_name, expr_mat) {
+  # Keep only genes present in both gene lists and expression matrix
+  sub_gene <- intersect(tcga_list, rownames(expr_mat))
+  data1 <- expr_mat[rownames(expr_mat) %in% sub_gene, , drop = FALSE]
+  data2 <- expr_mat[rownames(expr_mat) %in% bc_gene_list, , drop = FALSE]
+  
+  # Normalize
+  prediction_data_row_norm <- bin_matrix(data1, direction = "row", bin = FALSE)
+  prediction_data_col_norm <- bin_matrix(data1, direction = "column", bin = FALSE)
+  
+  # SDL pairs
+  pair <- BC_SELECT_Supplementary_Tables[[drug_pair_col]][1:55]
+  pair <- intersect(pair, rownames(prediction_data_row_norm))
+  
+  pair_mat <- prediction_data_row_norm[pair, , drop = FALSE]
+  
+  potential_sdl <- 0; active_sdl <- 0
+  
+  if (sum(!is.na(pair_mat)) / length(pair_mat) > 0.5) {
+    potential_sdl <- ifelse(!is.na(pair_mat), potential_sdl + 1, potential_sdl)
+    active_sdl <- ifelse(pair_mat > (1 - 0.33) & !is.na(pair_mat), active_sdl + 1, active_sdl ) }
+  
+  # Whole SDL score
+  prediction_data_row_norm2 <- bin_matrix(data2, direction = "row", bin = FALSE)
+  prediction_data_row_norm2 <- na.omit(prediction_data_row_norm2)
+  whole_up <- apply(prediction_data_row_norm2, 2, up_counts)
+  whole_up_patient <- as.numeric(colSums(whole_up))
+  whole_sdl_score <- whole_up_patient / nrow(prediction_data_row_norm2)
+  
+  # Target score
+  tscore <- colSums( (prediction_data_col_norm[drug_targets, , drop = FALSE] >= 0.2) * 1, na.rm = TRUE ) / length(drug_targets)
+  
+  expression_targets <- prediction_data_row_norm[drug_targets, , drop = FALSE]
+  normal_expression_targets <- as.numeric( colMeans(expression_targets, na.rm = TRUE) )
+  
+  # Final SDL score
+  old_sdl_score <- (colSums(active_sdl, na.rm = TRUE) /colSums(potential_sdl, na.rm = TRUE)) * tscore
+  new_sdl_score <- old_sdl_score / whole_sdl_score
+  new_sdl_score_target <- new_sdl_score * normal_expression_targets
+  
+  out <- data.frame(new_sdl_score_target)
+  colnames(out) <- score_name; rownames(out) <- colnames(prediction_data_row_norm)
+  out }
+
+
+# SR
+calc_sr_score <- function(drug_pair_col, drug_targets, score_name, expr_mat) {
+  # Keep only genes present in nanostring list and expression matrix
+  sub_gene <- intersect(nanostring, rownames(expr_mat))
+  data1 <- expr_mat[rownames(expr_mat) %in% sub_gene, , drop = FALSE]
+  
+  # Normalize
+  prediction_data_row_norm <- bin_matrix(data1, direction = "row", bin = FALSE)
+  
+  # SR partner genes
+  partners1 <- BC_SELECT_Supplementary_Tables[[drug_pair_col]][1:10]
+  partners1 <- intersect(partners1, rownames(prediction_data_row_norm))
+  
+  # SR score1
+  score1 <- colSums(prediction_data_row_norm[partners1, , drop = FALSE] < 0.33, na.rm = TRUE) / length(partners1)
+  
+  # Whole-gene down score
+  new_data2 <- bin_matrix(data1, direction = "row", bin = FALSE)
+  new_data2 <- na.omit(new_data2)
+  whole_down <- apply(new_data2, 2, down_counts)
+  whole_down_patient <- as.numeric(colSums(whole_down))
+  whole_score <- whole_down_patient / nrow(new_data2)
+  new_score <- (1 - score1) / (1 - whole_score)
+  
+  # Target expression score
+  target_expr <- prediction_data_row_norm[drug_targets, , drop = FALSE]
+  target <- apply(target_expr, 2, prod, na.rm = TRUE)
+  
+  # Final SR score (score2 only)
+  score2 <- new_score * rank_normalization(target)
+  out <- data.frame(score2)
+  colnames(out) <- score_name
+  rownames(out) <- colnames(prediction_data_row_norm)
+  
+  out }
+
+
+
+### 1.GSE194040: PEMBRO
+
+ISPY_pemb <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/immuno/ISPY_pemb.rds")
+brca_expr <- ISPY_pemb$mRNA[c("BRCA1", "BRCA2"), ] # BRCA1/2
+brca_avg <- colMeans(brca_expr, na.rm = TRUE) # mean of BRCA1/2 expression
+cutoff <- quantile(brca_avg, probs = 0.15, na.rm = TRUE) # bottom 10 % of samples
+bottom15_samples <- names(brca_avg)[brca_avg <= cutoff] # Sample names in the bottom 10%
+bottom15_samples; length(bottom15_samples)
+
+score_pemb <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/score_pemb.rds") # score2 : SR score
+SR_pemb <- score_pemb$score2[bottom15_samples]
+
+rm(brca_expr, brca_avg, cutoff)
+
+sl_veliparib <- calc_sl_score("SL, VELIPARIB", c("PARP1", "PARP2"), "SL_VELIPARIB", ISPY_pemb$mRNA)
+sl_olaparib <- calc_sl_score( "SL, OLAPARIB", c("PARP1", "PARP2", "PARP3"), "SL_OLAPARIB", ISPY_pemb$mRNA )
+sdl_veliparib <- calc_sdl_score("SDL, VELIPARIB", c("PARP1", "PARP2"), "SDL_VELIPARIB", ISPY_pemb$mRNA)
+sdl_olaparib <- calc_sdl_score("SDL, OLAPARIB", c("PARP1", "PARP2", "PARP3"), "SDL_OLAPARIB", ISPY_pemb$mRNA )
+
+score_df <- cbind(sl_veliparib, sl_olaparib,sdl_veliparib, sdl_olaparib)
+
+
+samples_keep <- bottom15_samples[bottom15_samples %in% rownames(score_df)]
+score_df <- score_df[samples_keep, , drop = FALSE]
+score_df$SR_PEMBRO <- SR_pemb[samples_keep]
+
+saveRDS(score_df, file = "GSE194040_PEMB_SCORE_DF.rds")
+
+
+### 2. GSE173839: DURVALUMAB, OLAPARIB
+
+GSE173839_ISPY2 <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/immuno/GSE173839_ISPY2.rds")
+brca_expr <- GSE173839_ISPY2$mRNA[c("BRCA1", "BRCA2"), ] # BRCA1/2
+brca_avg <- colMeans(brca_expr, na.rm = TRUE) # mean of BRCA1/2 expression
+cutoff <- quantile(brca_avg, probs = 0.15, na.rm = TRUE) # bottom 10 % of samples
+bottom15_samples <- names(brca_avg)[brca_avg <= cutoff] # Sample names in the bottom 10%
+bottom15_samples; length(bottom15_samples)
+
+score_durv <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/score_durv.rds")
+SR_durv <- score_durv$score2[bottom15_samples]
+
+rm(brca_expr, brca_avg, cutoff)
+
+sl_veliparib <- calc_sl_score("SL, VELIPARIB", c("PARP1", "PARP2"), "SL_VELIPARIB", GSE173839_ISPY2$mRNA)
+sl_olaparib <- calc_sl_score( "SL, OLAPARIB", c("PARP1", "PARP2", "PARP3"), "SL_OLAPARIB", GSE173839_ISPY2$mRNA )
+sdl_veliparib <- calc_sdl_score("SDL, VELIPARIB", c("PARP1", "PARP2"), "SDL_VELIPARIB", GSE173839_ISPY2$mRNA)
+sdl_olaparib <- calc_sdl_score("SDL, OLAPARIB", c("PARP1", "PARP2", "PARP3"), "SDL_OLAPARIB", GSE173839_ISPY2$mRNA )
+
+score_df <- cbind(sl_veliparib, sl_olaparib,sdl_veliparib, sdl_olaparib)
+
+
+samples_keep <- bottom15_samples[bottom15_samples %in% rownames(score_df)]
+score_df <- score_df[samples_keep, , drop = FALSE]
+score_df$SR_DURVAL <- SR_durv[samples_keep]
+
+#saveRDS(score_df, file = "GSE173839_SCORE_DF.rds")
+
+
+### 3. GSE194040: VELIPARIB
+
+load("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/GSE194040_ISPY2.RData")
+brca_expr <- GSE194040_ISPY2$mRNA[c("BRCA1", "BRCA2"), ] # BRCA1/2
+brca_avg <- colMeans(brca_expr, na.rm = TRUE)            # mean of BRCA1/2 expression
+cutoff <- quantile(brca_avg, probs = 0.15, na.rm = TRUE) # bottom 15 % of samples
+bottom15_samples <- names(brca_avg)[brca_avg <= cutoff] # Sample names in the bottom 10%
+bottom15_samples; length(bottom15_samples)
+
+score_GSE194040 <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/score_GSE194040.rds")
+SDL_VELIPARIB <- data.frame( SDL_VELIPARIB = score_GSE194040[bottom15_samples, "new_sdl_score_target"] )
+SDL_VELIPARIB <- data.frame( SDL_VELIPARIB = SDL_VELIPARIB, row.names = bottom15_samples)
+rm(brca_expr, brca_avg, cutoff)
+
+sr_score_df <- calc_sr_score( drug_pair_col = "SR, BC-SELECT (Immunotherapy)", drug_targets = c("PDCD1", "CD274"),
+                              score_name = "SR_DURV", expr_mat = GSE194040_ISPY2$mRNA )
+
+result_df <- sr_score_df[bottom15_samples, , drop = FALSE]
+result_df$SDL_VELIPARIB <- SDL_VELIPARIB[rownames(result_df), "SDL_VELIPARIB"]
+
+#saveRDS(result_df, file = "GSE194040_VELIPARIB_SCORE_DF.rds")
+
+
+### 4. GSE164458: VELIPARIB
+
+load("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/dat.GSE164458.RData")
+brca_expr <- dat.GSE164458$mRNA[c("BRCA1", "BRCA2"), ] # BRCA1/2
+brca_avg <- colMeans(brca_expr, na.rm = TRUE)            # mean of BRCA1/2 expression
+cutoff <- quantile(brca_avg, probs = 0.15, na.rm = TRUE) # bottom 15 % of samples
+bottom15_samples <- names(brca_avg)[brca_avg <= cutoff] # Sample names in the bottom 10%
+bottom15_samples; length(bottom15_samples)
+
+score_GSE164458 <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/score_GSE164458.rds")
+SL_VELIPARIB <- data.frame( SL_VELIPARIB = score_GSE164458[bottom15_samples, "new_sl_score_target"] )
+SL_VELIPARIB <- data.frame( SL_VELIPARIB = SL_VELIPARIB, row.names = bottom15_samples)
+rm(brca_expr, brca_avg, cutoff)
+
+sr_score_df <- calc_sr_score( drug_pair_col = "SR, BC-SELECT (Immunotherapy)", drug_targets = c("PDCD1", "CD274"),
+                              score_name = "SR_DURV", expr_mat = dat.GSE164458$mRNA )
+
+result_df <- sr_score_df[bottom15_samples, , drop = FALSE]
+result_df$SL_VELIPARIB <- SL_VELIPARIB[rownames(result_df), "SL_VELIPARIB"]
+
+saveRDS(result_df, file = "GSE164458_VELIPARIB_SCORE_DF.rds")
+
+
+
+# Figure
+library(ggplot2); library(ggpubr); library(patchwork)
+
+### 1.GSE194040: PEMBRO
+GSE194040_PEMB_SCORE_DF <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/SL_SR/GSE194040_PEMB_SCORE_DF.rds")
+
+p1 <- ggscatter( GSE194040_PEMB_SCORE_DF, x = "SR_PEMBRO", y = "SL_VELIPARIB", add = "reg.line", conf.int = FALSE,
+  cor.coef = TRUE, cor.method = "spearman", xlab = "SR score",  ylab = "SL score for VELIPARIB")
+
+p2 <- ggscatter( GSE194040_PEMB_SCORE_DF, x = "SR_PEMBRO", y = "SL_OLAPARIB", add = "reg.line", conf.int = FALSE,
+  cor.coef = TRUE, cor.method = "spearman", xlab = "SR score", ylab = "SL score for OLAPARIB")
+
+p3 <- ggscatter( GSE194040_PEMB_SCORE_DF, x = "SR_PEMBRO", y = "SDL_VELIPARIB", add = "reg.line", conf.int = FALSE,
+  cor.coef = TRUE,  cor.method = "spearman", xlab = "SR score", ylab = "SDL score for VELIPARIB")
+
+p4 <- ggscatter( GSE194040_PEMB_SCORE_DF, x = "SR_PEMBRO", y = "SDL_OLAPARIB", add = "reg.line", conf.int = FALSE,
+  cor.coef = TRUE, cor.method = "spearman", xlab = "SR score", ylab = "SDL score for OLAPARIB" )
+
+ggarrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
+
+# -> only SL score veliparib: negative association. (spearman or pearson)
+df <- GSE194040_PEMB_SCORE_DF
+r_val <- cor( df$SR_PEMBRO, df$SL_VELIPARIB, method = "spearman", use = "complete.obs")
+
+ggplot(df, aes(x = SR_PEMBRO, y = SL_VELIPARIB)) +
+  geom_point(size = 2, shape = 21, fill = "white", color = "black", stroke = 1 ) +
+  geom_smooth( method = "lm", se = FALSE, color = "red", linewidth = 1) +
+  annotate( "text", x = Inf, y = Inf,
+    label = paste0("Spearman correlation = ", round(r_val, 2)), hjust = 1.2, vjust = 1.6, size = 5) +
+  labs(x = "SR score", y = "SL score for Veliparib" ) +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "black"),
+    axis.line = element_line(linewidth = 0.8),
+    plot.margin = margin(10, 15, 10, 10)  )
+
+
+
+
+### 2. GSE173839: DURVALUMAB, OLAPARIB
+GSE173839_SCORE_DF <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/SL_SR/GSE173839_SCORE_DF.rds")
+df <- GSE173839_SCORE_DF
+
+make_scatter <- function(yvar, ylab) {
+  r_val <- cor(df$SR_DURVAL, df[[yvar]], method = "spearman", use = "complete.obs")
+ ggplot(df, aes(x = SR_DURVAL, y = .data[[yvar]])) +
+    geom_point(size = 3, shape = 21, fill = "white", color = "black", stroke = 1) +
+    geom_smooth(method = "lm", se = FALSE, color = "red", linewidth = 1) +
+    annotate("text", x = Inf, y = Inf, label = paste0("Spearman correlation = ", round(r_val, 2)),
+      hjust = 1.1, vjust = 1.5, size = 5 ) +
+    labs( x = "SR score", y = ylab ) + theme_classic(base_size = 14) +
+    theme(
+      axis.title = element_text(face = "bold"),
+      axis.text = element_text(color = "black"),
+      axis.line = element_line(linewidth = 0.8),
+      plot.margin = margin(10, 15, 10, 10)) }
+
+p1 <- make_scatter("SL_VELIPARIB",  "SL score for Veliparib")
+p2 <- make_scatter("SL_OLAPARIB",   "SL score for Olaparib")
+p3 <- make_scatter("SDL_VELIPARIB", "SDL score for Veliparib")
+p4 <- make_scatter("SDL_OLAPARIB",  "SDL score for Olaparib")
+
+(p1 | p2) / (p3 | p4)
+
+
+
+### 3. GSE194040: VELIPARIB
+GSE194040_VELIPARIB_SCORE_DF <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/SL_SR/GSE194040_VELIPARIB_SCORE_DF.rds")
+df <- GSE194040_VELIPARIB_SCORE_DF
+r_val <- cor(df$SR_DURV, df$SDL_VELIPARIB, method = "spearman", use = "complete.obs")
+
+ggplot(df, aes(x = SR_DURV, y = SDL_VELIPARIB)) +
+  geom_point(size = 3, shape = 21, fill = "white", color = "black", stroke = 1) +
+  geom_smooth(method = "lm", se = FALSE, color = "red", linewidth = 1) +
+  annotate("text", x = Inf, y = Inf, label = paste0("Spearman correlation = ", round(r_val, 2)), hjust = 1.1, vjust = 1.5,
+    size = 5  ) +
+  labs(x = "SR score", y = "SDL score for Veliparib" ) +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "black"),
+    axis.line = element_line(linewidth = 0.8),
+    plot.margin = margin(10, 15, 10, 10)  )
+
+### 4. GSE164458: VELIPARIB
+GSE164458_VELIPARIB_SCORE_DF <- readRDS("/gpfs/gsfs12/users/kimy35/BC-SELECT1.5/SL_SR/GSE164458_VELIPARIB_SCORE_DF.rds")
+df <- GSE164458_VELIPARIB_SCORE_DF
+
+rho <- cor(df$SR_DURV, df$SL_VELIPARIB, method = "spearman", use = "complete.obs" )
+
+ggplot(df, aes(x = SR_DURV, y = SL_VELIPARIB)) +
+  geom_point(size = 3, shape = 21, fill = "white", color = "black", stroke = 1 ) +
+  geom_smooth(method = "lm", se = FALSE, color = "red", linewidth = 1 ) +
+  annotate( "text", x = Inf, y = Inf, label = paste0("Spearman correlation = ", round(rho, 2)),
+    hjust = 1.1, vjust = 1.5, size = 5 ) +
+  labs( x = "SR score", y = "SL score for Veliparib" ) +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "black"),
+    axis.line = element_line(linewidth = 0.8),
+    plot.margin = margin(10, 15, 10, 10)
+  )
+
+
+### manuscript figure
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+
+make_scatter_panel <- function(df, xvar, yvar, subtitle,
+                               xlab = "SR score",
+                               ylab = "SL score",
+                               point_size = 2.5) {
+  r_val <- cor(df[[xvar]], df[[yvar]], method = "spearman", use = "complete.obs")
+  
+  ggplot(df, aes(x = .data[[xvar]], y = .data[[yvar]])) +
+    geom_point(size = point_size, shape = 21, fill = "white", color = "black", stroke = 1) +
+    geom_smooth(method = "lm", se = FALSE, color = "red", linewidth = 1) +
+    annotate(
+      "text", x = Inf, y = Inf,
+      label = paste0("Spearman r = ", round(r_val, 2)),
+      hjust = 1.15, vjust = 1.6, size = 5
+    ) +
+    labs(x = xlab, y = ylab, subtitle = subtitle) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.title = element_text(face = "bold"),
+      axis.text = element_text(color = "black"),
+      axis.line = element_line(linewidth = 0.8),
+      plot.margin = margin(10, 15, 10, 10),
+      plot.subtitle = element_text(face = "bold", hjust = 0.5)
+    )
+}
+
+# Panel 1
+df1 <- GSE194040_PEMB_SCORE_DF
+p1 <- make_scatter_panel(
+  df1,
+  xvar = "SR_PEMBRO",
+  yvar = "SL_VELIPARIB",
+  subtitle = "GSE194040 Pembrolizumab",
+  xlab = "SR score",
+  ylab = "SL score for Veliparib"
+)
+
+# Panel 2
+df2 <- GSE194040_VELIPARIB_SCORE_DF
+p2 <- make_scatter_panel(
+  df2,
+  xvar = "SR_DURV",
+  yvar = "SDL_VELIPARIB",
+  subtitle = "GSE194040 Veliparib",
+  xlab = "SR score",
+  ylab = "SDL score for Veliparib"
+)
+
+# Panel 3
+df3 <- GSE164458_VELIPARIB_SCORE_DF
+p3 <- make_scatter_panel(
+  df3,
+  xvar = "SR_DURV",
+  yvar = "SL_VELIPARIB",
+  subtitle = "GSE164458 Veliparib",
+  xlab = "SR score",
+  ylab = "SL score for Veliparib"
+)
+
+# Combine into one figure
+combined_plot <- (p1 | p2 | p3) +
+  plot_annotation(
+    #title = "Association between SR score and Veliparib-related SL score",
+    theme = theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 16))
+  )
+
+# Save for manuscript
+ggsave("BCSELECT_Veliparib_3panel_Figure.pdf", combined_plot, width = 15, height = 5)
+ggsave("BCSELECT_Veliparib_3panel_Figure.png", combined_plot, width = 15, height = 5, dpi = 300)
+
+combined_plot
+
